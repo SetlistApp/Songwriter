@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '0.5';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '0.6';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
@@ -199,8 +199,10 @@
       const cur = choices[state.tonic.pc];
       const other = cur.alt ? (cur.alt.name === state.tonic.name ? cur.note : cur.alt) : null;
       return `<div class="sw-dimmer" data-act="close-sheet"></div>
-        <div class="sw-sheet"><div class="sw-grab"></div>
-          <div class="sw-sheet-title">${state.tonic.name} ${scale().name}<button data-act="close-sheet">Done</button></div>
+        <div class="sw-sheet">
+          <div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div>
+            <div class="sw-sheet-title">${state.tonic.name} ${scale().name}<button data-act="close-sheet">Done</button></div>
+          </div>
           <div class="sw-sub">Key</div>
           <div class="sw-keys">${choices.map((k) => {
             const on = k.pc === state.tonic.pc;
@@ -233,6 +235,7 @@
         </div>`;
       }
       el.innerHTML = `<div class="sw-app sw-${mode}">${page}${sheet()}</div>`;
+      lockPageScroll(!!state.sheet);
 
       // Keep the fretboard/keyboard scrolled where it was; start the piano at middle C.
       const sc = el.querySelector('.sw-scroll');
@@ -334,7 +337,9 @@
     });
 
     // Stop the page from scrolling while a chord is being dragged.
-    document.addEventListener('touchmove', (e) => { if (drag && drag.active) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if ((drag && drag.active) || sheetDrag) e.preventDefault();
+    }, { passive: false });
     el.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-drag]')) e.preventDefault(); });
 
     function onPointerMove(e) {
@@ -470,6 +475,55 @@
       document.removeEventListener('pointercancel', onPointerCancel);
       drag = null;
     }
+
+    // ---------- Key & scale pop-up: swipe down to close, page behind stays still ----------
+    let sheetDrag = null;
+    let lockedScrollY = null;
+
+    // While the pop-up is open, pin the page so swiping on the pop-up can't scroll it.
+    function lockPageScroll(lock) {
+      const body = document.body;
+      if (lock && lockedScrollY === null) {
+        lockedScrollY = root.scrollY;
+        Object.assign(body.style, { position: 'fixed', top: `-${lockedScrollY}px`, left: '0', right: '0' });
+      } else if (!lock && lockedScrollY !== null) {
+        Object.assign(body.style, { position: '', top: '', left: '', right: '' });
+        root.scrollTo(0, lockedScrollY);
+        lockedScrollY = null;
+      }
+    }
+
+    el.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('[data-sheet-grab]')) return;
+      const sheetEl = el.querySelector('.sw-sheet');
+      sheetDrag = { y0: e.clientY, t0: Date.now(), dy: 0, sheetEl, dimEl: el.querySelector('.sw-dimmer') };
+      sheetEl.style.transition = 'none';
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!sheetDrag) return;
+      sheetDrag.dy = Math.max(0, e.clientY - sheetDrag.y0);   // only follows the finger downward
+      sheetDrag.sheetEl.style.transform = `translateY(${sheetDrag.dy}px)`;
+      sheetDrag.dimEl.style.opacity = String(Math.max(0, 1 - sheetDrag.dy / 400));
+    });
+    function endSheetDrag() {
+      if (!sheetDrag) return;
+      const { dy, t0, sheetEl, dimEl } = sheetDrag;
+      sheetDrag = null;
+      const fast = dy > 30 && dy / Math.max(1, Date.now() - t0) > 0.5;   // a quick flick also closes it
+      sheetEl.style.transition = 'transform 0.18s ease-out';
+      dimEl.style.transition = 'opacity 0.18s ease-out';
+      if (dy > 90 || fast) {
+        sheetEl.style.transform = 'translateY(100%)';
+        dimEl.style.opacity = '0';
+        suppressClick = true;
+        setTimeout(() => { suppressClick = false; state.sheet = null; render(); }, 180);
+      } else {
+        sheetEl.style.transform = '';
+        dimEl.style.opacity = '';
+      }
+    }
+    document.addEventListener('pointerup', endSheetDrag);
+    document.addEventListener('pointercancel', endSheetDrag);
 
     // ---------- Start ----------
     let resizeTimer;
