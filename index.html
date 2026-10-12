@@ -16,6 +16,33 @@
   <script src="theory.js"></script>
   <script src="instruments.js"></script>
   <script src="app.js"></script>
-  <script>SW.app.mount(document.getElementById('songwriter'));</script>
+  <script>
+    var app = SW.app.mount(document.getElementById('songwriter'));
+
+    // Automatic updates, the same way the Setlist app does it: check for a new version every
+    // minute and whenever the app is reopened; when one arrives, refresh (keeping your work).
+    (function () {
+      if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+      var CHECK_EVERY_MS = 60000;
+      var hadVersion = !!navigator.serviceWorker.controller;   // first visit: nothing to refresh
+      var reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadVersion || reloading) return;
+        reloading = true;
+        (function whenIdle() {
+          if (app.isBusy()) return setTimeout(whenIdle, 500);  // never mid-drag
+          app.saveSnapshot();
+          location.reload();
+        })();
+      });
+      navigator.serviceWorker.register('service-worker.js').then(function (reg) {
+        function check() { reg.update().catch(function () {}); }
+        setInterval(check, CHECK_EVERY_MS);
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') check();
+        });
+      }).catch(function () {});
+    })();
+  </script>
 </body>
 </html>

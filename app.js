@@ -10,6 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
+  const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
   function mount(el) {
@@ -27,6 +28,7 @@
       progression: [],       // chord specs, stored relative to the key
       sheet: null            // 'key' | 'scale' | null
     };
+    restoreSnapshot(state);
     const landMq = root.matchMedia(LAND_QUERY);
     const deskMq = root.matchMedia(DESK_QUERY);
     let drag = null;
@@ -482,7 +484,26 @@
     landMq.addEventListener('change', render);
     deskMq.addEventListener('change', render);
     render();
-    return { state, render };
+    return {
+      state,
+      render,
+      /** Save what's on screen so it comes back after the page refreshes itself. */
+      saveSnapshot() {
+        try { root.sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state)); } catch (e) { /* private mode: fine */ }
+      },
+      /** True while a chord is being dragged (don't refresh mid-drag). */
+      isBusy: () => !!(drag && drag.active)
+    };
+  }
+
+  function restoreSnapshot(state) {
+    try {
+      const snap = JSON.parse(root.sessionStorage.getItem(SNAPSHOT_KEY));
+      root.sessionStorage.removeItem(SNAPSHOT_KEY);
+      if (!snap) return;
+      T.getScale(snap.scaleId);   // throws if the saved scale no longer exists
+      Object.assign(state, snap, { tonic: T.note(snap.tonic.letter, snap.tonic.acc), sheet: null });
+    } catch (e) { /* nothing saved, or it's from an older version: start fresh */ }
   }
 
   SW.app = { mount };
