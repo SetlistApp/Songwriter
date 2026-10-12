@@ -46,7 +46,7 @@
   font-family: var(--sw-display); font-weight: 600; font-size: 16px;
 }
 .sw-pick span { color: var(--sw-dim); font-size: 10px; }
-.sw-pick small { font-family: var(--sw-mono); font-weight: 400; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sw-dim); margin-right: 2px; }
+.sw-pick small { font-family: var(--sw-mono); font-weight: 400; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sw-dim); margin-right: 3px; }
 .sw-label {
   font-family: var(--sw-display); font-weight: 600; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--sw-dim); margin: 16px 0 7px; display: flex; justify-content: space-between; align-items: center; min-height: 20px;
@@ -186,7 +186,16 @@
   font-family: var(--sw-display); font-weight: 600; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase;
   margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;
 }
-.sw-sheet-title small { font-family: var(--sw-body); font-weight: 400; font-size: 12px; color: var(--sw-dim); text-transform: none; letter-spacing: 0; }
+.sw-sheet-title { align-items: center; margin-bottom: 4px; }
+.sw-sheet-title button {
+  font-family: var(--sw-display); font-weight: 600; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
+  background: var(--sw-gold); color: var(--sw-bg); border-radius: 9px; padding: 8px 16px;
+}
+.sw-sheet .sw-sub { margin-top: 14px; }
+.sw-sheet .sw-keys button { min-height: 44px; font-size: 18px; }
+.sw-sheet .sw-scales button { min-height: 38px; padding: 7px 12px; font-size: 13.5px; }
+/* Same look as the version line at the bottom of the Setlist app's menu. */
+.sw-version { font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); text-align: center; padding-top: 8px; margin-top: 16px; border-top: 1px solid var(--sw-line); }
 .sw-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 .sw-keys button {
   background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px; min-height: 48px;

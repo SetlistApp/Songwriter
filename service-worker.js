@@ -5,7 +5,7 @@
 
    Only touches caches whose names start with "songwriter-", so it can never delete the
    Setlist app's offline copy (both apps live on setlistapp.github.io). */
-var VERSION = 'e385d30393';
+var VERSION = '56cacbe2b4';
 var PREFIX = 'songwriter-';
 var CACHE = PREFIX + VERSION;
 var SHELL = ['./', './index.html', './styles.css', './theory.js', './instruments.js', './app.js'];

@@ -10,6 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
+  const APP_VERSION = '0.4';   // shown at the bottom of the Key & scale pop-up; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
@@ -53,11 +54,8 @@
         `<button class="${String(v) === String(current) ? 'sw-on' : ''}" data-act="${act}" data-arg="${v}">${label}</button>`).join('')}</div>`;
 
     // ---------- Drawing ----------
-    function pickers() {
-      return `<div class="sw-picks">
-        <button class="sw-pick" data-act="open-sheet" data-arg="key"><small>Key</small>${state.tonic.name} <span>▾</span></button>
-        <button class="sw-pick" data-act="open-sheet" data-arg="scale">${scale().name} <span>▾</span></button>
-      </div>`;
+    function picker() {
+      return `<button class="sw-pick" data-act="open-sheet"><small>Key</small>${state.tonic.name} ${scale().name} <span>▾</span></button>`;
     }
 
     function notesStrip() {
@@ -192,30 +190,25 @@
         </div>`;
     }
 
+    /** The Key & scale pop-up. Changes show right away behind it; Done or tapping outside closes it. */
     function sheet() {
-      if (state.sheet === 'key') {
-        const choices = T.keyChoices(state.scaleId);
-        const cur = choices[state.tonic.pc];
-        const other = cur.alt ? (cur.alt.name === state.tonic.name ? cur.note : cur.alt) : null;
-        return `<div class="sw-dimmer" data-act="close-sheet"></div>
-          <div class="sw-sheet"><div class="sw-grab"></div>
-            <div class="sw-sheet-title">Pick a key <small>for ${scale().name}</small></div>
-            <div class="sw-keys">${choices.map((k) => {
-              const on = k.pc === state.tonic.pc;
-              return `<button class="${on ? 'sw-on' : ''}" data-act="pick-key" data-arg="${k.pc}">${on ? state.tonic.name : k.note.name}</button>`;
-            }).join('')}</div>
-            ${other ? `<div class="sw-swap">${state.tonic.name} can also be spelled ${other.name} · <button data-act="swap-spelling">Swap spelling</button></div>` : ''}
-          </div>`;
-      }
-      if (state.sheet === 'scale') {
-        return `<div class="sw-dimmer" data-act="close-sheet"></div>
-          <div class="sw-sheet"><div class="sw-grab"></div>
-            <div class="sw-sheet-title">Pick a scale <small>in ${state.tonic.name}</small></div>
-            ${T.SCALE_GROUPS.map((g) => `<div class="sw-sub">${g}</div><div class="sw-scales">${T.SCALES.filter((s) => s.group === g).map((s) =>
-              `<button class="${s.id === state.scaleId ? 'sw-on' : ''}" data-act="pick-scale" data-arg="${s.id}">${s.name}</button>`).join('')}</div>`).join('')}
-          </div>`;
-      }
-      return '';
+      if (!state.sheet) return '';
+      const choices = T.keyChoices(state.scaleId);
+      const cur = choices[state.tonic.pc];
+      const other = cur.alt ? (cur.alt.name === state.tonic.name ? cur.note : cur.alt) : null;
+      return `<div class="sw-dimmer" data-act="close-sheet"></div>
+        <div class="sw-sheet"><div class="sw-grab"></div>
+          <div class="sw-sheet-title">${state.tonic.name} ${scale().name}<button data-act="close-sheet">Done</button></div>
+          <div class="sw-sub">Key</div>
+          <div class="sw-keys">${choices.map((k) => {
+            const on = k.pc === state.tonic.pc;
+            return `<button class="${on ? 'sw-on' : ''}" data-act="pick-key" data-arg="${k.pc}">${on ? state.tonic.name : k.note.name}</button>`;
+          }).join('')}</div>
+          ${other ? `<div class="sw-swap">${state.tonic.name} can also be spelled ${other.name} · <button data-act="swap-spelling">Swap spelling</button></div>` : ''}
+          ${T.SCALE_GROUPS.map((g) => `<div class="sw-sub">${g}</div><div class="sw-scales">${T.SCALES.filter((x) => x.group === g).map((x) =>
+            `<button class="${x.id === state.scaleId ? 'sw-on' : ''}" data-act="pick-scale" data-arg="${x.id}">${x.name}</button>`).join('')}</div>`).join('')}
+          <div class="sw-version">v${APP_VERSION}</div>
+        </div>`;
     }
 
     function render() {
@@ -231,7 +224,7 @@
         </div>`;
       } else {
         page = `<div class="sw-page">
-          <header class="sw-hdr"><div class="sw-logo">Song<b>writer</b></div>${pickers()}</header>
+          <header class="sw-hdr"><div class="sw-logo">Song<b>writer</b></div>${picker()}</header>
           <div class="sw-cols">
             <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Drag a chord here from above.')}</div>
             <div class="sw-side">${instrumentPanel(mode, drawing)}</div>
@@ -277,9 +270,9 @@
 
     function act(name, arg, data) {
       switch (name) {
-        case 'open-sheet': state.sheet = arg; break;
+        case 'open-sheet': state.sheet = 'pick'; break;
         case 'close-sheet': state.sheet = null; break;
-        case 'pick-key': state.tonic = T.keyChoices(state.scaleId)[+arg].note; state.sheet = null; break;
+        case 'pick-key': state.tonic = T.keyChoices(state.scaleId)[+arg].note; break;
         case 'swap-spelling': {
           const cur = T.keyChoices(state.scaleId)[state.tonic.pc];
           state.tonic = cur.alt.name === state.tonic.name ? cur.note : cur.alt;
@@ -288,7 +281,6 @@
         case 'pick-scale':
           state.scaleId = arg;
           state.tonic = T.respellTonic(state.tonic, arg);
-          state.sheet = null;
           break;
         case 'tab': state.tab = arg; break;
         case 'size': state.size = +arg; break;
