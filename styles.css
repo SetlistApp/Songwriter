@@ -55,14 +55,10 @@
 
 /* ---------- Notes strip ---------- */
 .sw-notes { display: flex; gap: 4px; }
-.sw-note {
-  flex: 1; min-width: 0; text-align: center; background: var(--sw-surface); border: 1px solid var(--sw-line);
-  border-radius: 8px; padding: 4px 0 3px; line-height: 1;
-}
-.sw-note b { display: block; font-family: var(--sw-display); font-weight: 600; font-size: 15px; }
+/* Plain gray text (no box, no gold) so the notes don't look like buttons. */
+.sw-note { flex: 1; min-width: 0; text-align: center; padding: 2px 0; line-height: 1; color: #b3ada4; }
+.sw-note b { display: block; font-family: var(--sw-display); font-weight: 500; font-size: 15px; }
 .sw-note i { font-style: normal; font-family: var(--sw-mono); font-size: 8.5px; color: var(--sw-dim); }
-.sw-note.sw-root { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); }
-.sw-note.sw-root i { color: #5a4316; }
 
 /* ---------- Tabs & toggles ---------- */
 .sw-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
