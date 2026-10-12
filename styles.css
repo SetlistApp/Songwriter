@@ -55,9 +55,9 @@
 
 /* ---------- Notes strip ---------- */
 .sw-notes { display: flex; gap: 4px; }
-/* Plain gray text (no box, no gold) so the notes don't look like buttons. */
-.sw-note { flex: 1; min-width: 0; text-align: center; padding: 2px 0; line-height: 1; color: #b3ada4; }
-.sw-note b { display: block; font-family: var(--sw-display); font-weight: 500; font-size: 15px; }
+/* Plain bold text (no box, no gold) so the notes stand out but don't look like buttons. */
+.sw-note { flex: 1; min-width: 0; text-align: center; padding: 2px 0; line-height: 1; color: var(--sw-text); }
+.sw-note b { display: block; font-family: var(--sw-display); font-weight: 700; font-size: 16px; }
 .sw-note i { font-style: normal; font-family: var(--sw-mono); font-size: 8.5px; color: var(--sw-dim); }
 
 /* ---------- Tabs & toggles ---------- */

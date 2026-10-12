@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '0.7';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '0.8';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
