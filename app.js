@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta2';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta3';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
@@ -36,6 +36,8 @@
       vlLocks: {},           // { chipIndex: [locked MIDI notes] }
       vlSel: -1,             // chord picked on the roll (its options show below); -1 = "All chords"
       vlGroups: 3,           // how many half-step groups to list ("Show more" adds 3)
+      vlOpen: [],            // totals of the groups opened up to show every voicing
+      vlLabels: 'notes',     // roll labels: 'notes' (C, E, G) or 'tones' (1, 3, 5, 7)
       vlSig: ''              // what the voicings were worked out for (key, chords, settings)
     };
     restoreSnapshot(state);
@@ -231,7 +233,7 @@
     function vlSync() {
       const sig = JSON.stringify([state.tonic.name, state.progression, state.vlNotes, state.vlInv]);
       if (sig !== state.vlSig) {
-        Object.assign(state, { vlSig: sig, vlPath: null, vlLocks: {}, vlSel: -1, vlGroups: 3 });
+        Object.assign(state, { vlSig: sig, vlPath: null, vlLocks: {}, vlSel: -1, vlGroups: 3, vlOpen: [] });
       }
       if (!state.vlPath) state.vlPath = T.smoothestVoicing(state.tonic, state.progression, vlOpts(), state.vlLocks);
       if (state.vlSel >= state.progression.length) state.vlSel = -1;
@@ -245,8 +247,8 @@
       return state.progression.map((spec, i) => {
         const c = chord(spec), labels = {};
         (state.vlPath[i] || []).forEach((m) => {
-          const n = c.notes.find((x) => x.pc === m % 12);
-          labels[m] = n ? n.name : '';
+          const k = c.notes.findIndex((x) => x.pc === m % 12);
+          labels[m] = k < 0 ? '' : state.vlLabels === 'tones' ? c.tones[k] : c.notes[k].name;
         });
         return { name: c.symbol, rootPc: c.root.pc, labels };
       });
@@ -261,6 +263,9 @@
     function vlControls() {
       return `<div class="sw-vlbar">
         ${seg('vl-notes', [[3, '3 notes'], [4, '4 notes']], state.vlNotes, 'sw-sm')}
+        ${seg('vl-labels', [['notes', 'C E G'], ['tones', '1 3 5']], state.vlLabels, 'sw-sm')}
+      </div>
+      <div class="sw-vlbar">
         <button class="sw-switch ${state.vlInv ? 'sw-on' : ''}" data-act="vl-inv"><span></span>Inversions</button>
         <span class="sw-total"><b>${T.pathTotal(state.vlPath)}</b> half-steps</span>
       </div>`;
@@ -273,18 +278,23 @@
     /** "All chords": every complete voicing, grouped by total half-steps. */
     function vlGroupList() {
       const groups = vlGroupsNow();
-      const shown = groups.flatMap((g) => g.paths.slice(0, 3));
+      const shown = groups.flatMap((g) => (state.vlOpen.includes(g.total) ? g.paths : g.paths.slice(0, 3)));
       const range = INST.rollRange(shown);
       const roots = state.progression.map((spec) => chord(spec).root.pc);
       const cur = pathKey(state.vlPath);
       const h = Math.max(58, state.progression.length * 13);
       return `<div class="sw-optbox">
         <div class="sw-opthead"><div><b>All chords</b> · ways to voice the whole progression</div></div>
-        ${groups.map((g, gi) => `<div class="sw-grp">
-          <div class="sw-grph">${g.total} half-steps <span>· ${g.paths.length} way${g.paths.length > 1 ? 's' : ''}${g.paths.length > 3 ? ', showing 3' : ''}</span></div>
-          <div class="sw-thumbs">${g.paths.slice(0, 3).map((p, pi) =>
-            `<button class="sw-thumb ${pathKey(p) === cur ? 'sw-on' : ''}" data-act="vl-pick" data-g="${gi}" data-p="${pi}">${INST.voiceRollMini(p, roots, range, 96, h)}</button>`).join('')}</div>
-        </div>`).join('')}
+        ${groups.map((g, gi) => {
+          const open = state.vlOpen.includes(g.total), shownHere = open ? g.paths : g.paths.slice(0, 3), extra = g.paths.length - 3;
+          return `<div class="sw-grp">
+          <div class="sw-grph">${g.total} half-steps <span>· ${g.paths.length} way${g.paths.length > 1 ? 's' : ''}</span>
+            ${extra > 0 ? `<button class="sw-fewer" data-act="vl-expand" data-total="${g.total}">${open ? 'Show fewer' : `+${extra} more`}</button>` : ''}</div>
+          <div class="sw-thumbs">${shownHere.map((p, pi) =>
+            `<button class="sw-thumb ${pathKey(p) === cur ? 'sw-on' : ''}" data-act="vl-pick" data-g="${gi}" data-p="${pi}">${INST.voiceRollMini(p, roots, range, 96, h)}</button>`).join('')}
+</div>
+        </div>`;
+        }).join('')}
         ${groups.length === state.vlGroups ? '<button class="sw-more" data-act="vl-more">Show more</button>' : ''}
         <div class="sw-opthint">Tap a preview to use it. Tap a chord name on the roll to swap just that chord.</div>
       </div>`;
@@ -338,6 +348,12 @@
         case 'vl-chord': state.vlSel = state.vlSel === i ? -1 : i; break;
         case 'vl-back': state.vlSel = -1; break;
         case 'vl-more': state.vlGroups += 3; break;
+        case 'vl-labels': state.vlLabels = data.arg; break;
+        case 'vl-expand': {
+          const t = +data.total;
+          state.vlOpen = state.vlOpen.includes(t) ? state.vlOpen.filter((x) => x !== t) : state.vlOpen.concat([t]);
+          break;
+        }
         case 'vl-pick': state.vlPath = vlGroupsNow()[+data.g].paths[+data.p].map((v) => v.slice()); break;
         case 'vl-option': {
           const o = T.chordVoicingOptions(state.tonic, state.progression, state.vlPath, state.vlSel, vlOpts(), state.vlLocks)[+data.k];

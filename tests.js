@@ -115,6 +115,13 @@
     check('B♭ in D major is ♭6', T.degreeLabel(N('D'), 'major', 10), '♭6');
     check('E♭ in A blues is ♭5', T.degreeLabel(N('A'), 'blues', 3), '♭5');
 
+    // --- Chord tones (1, 3, 5, 7) ---
+    function tones(tonic, sp) { return T.buildChord(N(tonic), sp).tones.join(' '); }
+    check('Chord tones of Cmaj7', tones('C', { deg: 0, semi: 0, quality: 'maj7' }), '1 3 5 7');
+    check('Chord tones of Am7', tones('C', { deg: 5, semi: 9, quality: 'min7' }), '1 ♭3 5 ♭7');
+    check('Chord tones of B°', tones('C', { deg: 6, semi: 11, quality: 'dim' }), '1 ♭3 ♭5');
+    check('Chord tones of Gsus4', tones('C', { deg: 4, semi: 7, quality: 'sus4' }), '1 4 5');
+
     // --- Voice leading ---
     var C = N('C');
     var spec = function (deg, semi, quality) { return { deg: deg, semi: semi, quality: quality }; };
@@ -126,12 +133,13 @@
     var smooth = T.smoothestVoicing(C, CGAmF, three);
     check('C G Am F: smoothest total', T.pathTotal(smooth), 9);
     check('C G Am F: shared notes stay put (G in C → G, C in Am → F)', [smooth[1].indexOf(67) >= 0 && smooth[0].indexOf(67) >= 0, smooth[2].indexOf(60) >= 0 && smooth[3].indexOf(60) >= 0], [true, true]);
-    check('C G Am F with inversions off: total', T.pathTotal(T.smoothestVoicing(C, CGAmF, { notes: 3, inversions: false })), 31);
+    check('C G Am F with inversions off: total (open voicings help)', T.pathTotal(T.smoothestVoicing(C, CGAmF, { notes: 3, inversions: false })), 27);
     check('Inversions off: root is always lowest', T.smoothestVoicing(C, CGAmF, { notes: 3, inversions: false }).map(function (v) { return v[0] % 12; }), [0, 7, 9, 5]);
     var locked = T.smoothestVoicing(C, CGAmF, three, { 2: [72] });
     check('Locking C5 on Am keeps it', locked[2].indexOf(72) >= 0, true);
     var groups = T.voicingGroups(C, CGAmF, three, null, 3);
     check('Groups: 3 groups, smoothest first, totals rising', groups.length === 3 && groups[0].total === 9 && groups[0].total < groups[1].total && groups[1].total < groups[2].total, true);
+    check('Groups: the smoothest group lists all 3 ways', groups[0].paths.length, 3);
     check('Groups: every path in a group has that total', groups.every(function (g) { return g.paths.every(function (p) { return T.pathTotal(p) === g.total; }); }), true);
     var opts = T.chordVoicingOptions(C, CGAmF, smooth, 1, three);
     check('One-chord options sorted least to most', opts.every(function (o, i) { return !i || opts[i - 1].total <= o.total; }), true);
@@ -141,7 +149,9 @@
     check('4 notes: smoothest C G Am F has 4 notes per chord', T.smoothestVoicing(C, CGAmF, { notes: 4 }).every(function (v) { return v.length === 4; }), true);
     var g7 = T.chordVoicings(T.buildChord(C, spec(4, 7, 'dom7')), three)[0].map(function (m) { return m % 12; }).sort(function (a, b) { return a - b; });
     check('3 notes of G7 leave out the 5th (G B F)', g7, [5, 7, 11]);
-    check('All voicings fit in one octave', CGAmF.every(function (sp) { return T.chordVoicings(T.buildChord(C, sp), three).every(function (v) { return v[v.length - 1] - v[0] <= 12; }); }), true);
+    check('Voicings span at most a 10th', CGAmF.every(function (sp) { return T.chordVoicings(T.buildChord(C, sp), three).every(function (v) { return v[v.length - 1] - v[0] <= 16; }); }), true);
+    check('Open voicings are allowed (C4 G4 E5)', T.chordVoicings(T.buildChord(C, CGAmF[0]), three).some(function (v) { return v.join() === '60,67,76'; }), true);
+    check('Ties go to close voicings: smoothest C G Am F is all close', T.smoothestVoicing(C, CGAmF, three).every(function (v) { return v[v.length - 1] - v[0] <= 12; }), true);
 
     return results;
   };

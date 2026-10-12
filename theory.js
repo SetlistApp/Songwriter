@@ -186,6 +186,8 @@
       root: root,
       notes: q.tones.map(function (t) { return spellFrom(root, t[0], t[1]); }),
       intervals: q.tones.map(function (t) { return t[1]; }),
+      // What each note is within the chord: "1", "♭3", "5", "♭7"...
+      tones: q.tones.map(function (t) { return degreeText(t[0], t[1]); }),
       symbol: root.name + q.suffix,
       numeral: numeral
     };
@@ -293,11 +295,12 @@
 
   var VOICE_LO = 53, VOICE_HI = 76;   // F3 to E5
   var VOICE_CENTER = 64;              // E4: ties go to the voicing nearest the middle
-  var KEEP_PER_STEP = 24;             // partial paths kept per voicing when listing many options
+  var MAX_SPAN = 16;                  // lowest to highest note: up to a 10th (open voicings allowed)
+  var KEEP_PER_STEP = 80;             // partial paths kept per voicing when listing many options
 
   /** Every voicing of a chord. opts: { notes: 3|4, inversions: true|false }.
       3 notes: a triad (7th chords leave out the 5th). 4 notes: a 7th chord, or a triad with
-      any one note doubled. All notes fit within one octave so one hand can play them.
+      any one note doubled. Close or open: the notes span at most a 10th (one hand / guitar).
       inversions false: the chord's root is always the lowest note. */
   function chordVoicings(chord, opts) {
     var count = (opts && opts.notes) || 3, inv = !opts || opts.inversions !== false;
@@ -312,7 +315,7 @@
         if (k === set.length) {
           var v = chosen.slice().sort(function (a, b) { return a - b; });
           for (var i = 1; i < v.length; i++) if (v[i] === v[i - 1]) return;
-          if (v[v.length - 1] - v[0] > 12) return;
+          if (v[v.length - 1] - v[0] > MAX_SPAN) return;
           if (!inv && mod(v[0], 12) !== chord.root.pc) return;
           var key = v.join();
           if (!seen[key]) { seen[key] = true; out.push(v); }
@@ -331,10 +334,12 @@
     return t;
   }
 
+  /** Tie-breaker between voicings that move the same amount: prefer compact (close) voicings,
+      then ones near the middle of the keyboard. */
   function centerPenalty(v) {
     var sum = 0;
     v.forEach(function (m) { sum += m; });
-    return Math.abs(sum / v.length - VOICE_CENTER);
+    return (v[v.length - 1] - v[0]) * 2 + Math.abs(sum / v.length - VOICE_CENTER);
   }
 
   /** Voicings for each chord of a progression, keeping only those with every locked note.
