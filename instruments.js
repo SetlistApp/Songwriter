@@ -63,6 +63,7 @@
     var whites = [], blacks = [], xOf = {};
     for (var m = start; m <= end; m++) (BLACK[m % 12] ? blacks : whites).push(m);
     var W = whites.length * ww + 2, H = wh + 20, bw = ww * 0.6, bh = wh * 0.62;
+    var dotR = Math.min(11, ww * 0.33);   // same size on white and black keys
     var s = '<svg class="sw-piano" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
     whites.forEach(function (m, i) {
       xOf[m] = i * ww + 1;
@@ -80,7 +81,7 @@
       var black = !!BLACK[k % 12];
       var cx = black ? xOf[k] + bw / 2 : xOf[k] + ww / 2 - 0.75, cy = black ? bh - 14 : wh - 28;
       if (mk.type === 'plain') s += '<text class="sw-plain-txt ' + (black ? '' : 'sw-on-white') + '" x="' + cx + '" y="' + (cy + 3.6) + '">' + mk.text + '</text>';
-      else s += circle(cx, cy, Math.min(black ? bw * 0.42 : ww * 0.36, 13), { type: mk.type + (black ? '' : ' sw-on-white'), text: mk.text });
+      else s += circle(cx, cy, dotR, { type: mk.type + (black ? '' : ' sw-on-white'), text: mk.text });
     }
     return { svg: s + '</svg>', xOf: function (midi) { return xOf[midi]; } };
   }

@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '0.4';   // shown at the bottom of the Key & scale pop-up; keep in step with CHANGELOG.md
+  const APP_VERSION = '0.5';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
@@ -40,10 +40,12 @@
     const layout = () => (landMq.matches ? 'land' : deskMq.matches ? 'desk' : 'phone');
     const scale = () => T.getScale(state.scaleId);
     const chord = (spec) => T.buildChord(state.tonic, spec);
-    const specAttr = (s) => `${s.deg},${s.semi},${s.quality}`;
+    const specAttr = (s) => `${s.deg},${s.semi},${s.quality},${s.of || ''}`;
     const parseSpec = (text) => {
-      const [deg, semi, quality] = text.split(',');
-      return { deg: +deg, semi: +semi, quality };
+      const [deg, semi, quality, of] = text.split(',');
+      const spec = { deg: +deg, semi: +semi, quality };
+      if (of) spec.of = of;   // secondary dominant: "V/ii" leads to ii
+      return spec;
     };
     const anySpec = () => {
       const r = T.anyRoots(state.tonic, state.scaleId).find((x) => x.semi === state.anySemi);
@@ -55,7 +57,7 @@
 
     // ---------- Drawing ----------
     function picker() {
-      return `<button class="sw-pick" data-act="open-sheet"><small>Key</small>${state.tonic.name} ${scale().name} <span>▾</span></button>`;
+      return `<button class="sw-pick" data-act="open-sheet">${state.tonic.name} ${scale().name} <span>▾</span></button>`;
     }
 
     function notesStrip() {
@@ -83,11 +85,11 @@
           <div class="sw-grid ${state.size === 4 ? 'sw-3col' : ''}">${list.map((c) => card(c)).join('')}</div>
           ${parent ? `<div class="sw-footnote">Chords come from ${state.tonic.name} ${parent.name.toLowerCase()}, the full scale this one is part of.</div>` : ''}`;
       } else if (state.tab === 'borrowed') {
-        const list = T.borrowedChords(state.tonic, state.scaleId);
+        const list = T.borrowedChords(state.tonic, state.scaleId, state.size);
         const from = scale().flavor === 'major' ? 'minor' : 'major';
-        body = `<div class="sw-row sw-chords-head">${hint}</div>
-          <div class="sw-grid">${list.map((c) => card(c)).join('')}</div>
-          <div class="sw-footnote">Borrowed from ${state.tonic.name} ${from} and nearby scales. They add color.</div>`;
+        body = `<div class="sw-row sw-chords-head">${hint}${seg('size', [[3, 'Triads'], [4, '7ths']], state.size, 'sw-sm')}</div>
+          <div class="sw-grid ${state.size === 4 ? 'sw-3col' : ''}">${list.map((c) => card(c)).join('')}</div>
+          <div class="sw-footnote">From ${state.tonic.name} ${from}, plus secondary dominants (V/ii = the V of ii).</div>`;
       } else {
         const roots = T.anyRoots(state.tonic, state.scaleId);
         const result = chord(anySpec());
@@ -207,7 +209,6 @@
           ${other ? `<div class="sw-swap">${state.tonic.name} can also be spelled ${other.name} · <button data-act="swap-spelling">Swap spelling</button></div>` : ''}
           ${T.SCALE_GROUPS.map((g) => `<div class="sw-sub">${g}</div><div class="sw-scales">${T.SCALES.filter((x) => x.group === g).map((x) =>
             `<button class="${x.id === state.scaleId ? 'sw-on' : ''}" data-act="pick-scale" data-arg="${x.id}">${x.name}</button>`).join('')}</div>`).join('')}
-          <div class="sw-version">v${APP_VERSION}</div>
         </div>`;
     }
 
@@ -224,7 +225,7 @@
         </div>`;
       } else {
         page = `<div class="sw-page">
-          <header class="sw-hdr"><div class="sw-logo">Song<b>writer</b></div>${picker()}</header>
+          <header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${picker()}</header>
           <div class="sw-cols">
             <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Drag a chord here from above.')}</div>
             <div class="sw-side">${instrumentPanel(mode, drawing)}</div>

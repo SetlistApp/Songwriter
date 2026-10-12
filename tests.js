@@ -77,14 +77,19 @@
     check('G♯°7 chord notes', chordNotes('G♯', { deg: 0, semi: 0, quality: 'dim7' }), 'G♯ B D F');
     check('C major chord as MIDI', T.chordMidi(cTri[0], 4), [60, 64, 67]);
 
-    // --- Borrowed chords ---
-    check('Borrowed in C major', symbols(T.borrowedChords(N('C'), 'major')), 'Fm E♭ A♭ B♭ D° Gm D');
-    check('Borrowed numerals in C major', numerals(T.borrowedChords(N('C'), 'major')), 'iv ♭III ♭VI ♭VII ii° v II');
-    check('Borrowed in D major', symbols(T.borrowedChords(N('D'), 'major')), 'Gm F B♭ C E° Am E');
-    check('Borrowed in A minor', symbols(T.borrowedChords(N('A'), 'minor')), 'D E E7 A');
-    check('Borrowed in D Dorian (IV already in key)', symbols(T.borrowedChords(N('D'), 'dorian')), 'A A7 D');
-    check('Borrowed in A harmonic minor (V already in key)', symbols(T.borrowedChords(N('A'), 'harmonicMinor')), 'D A');
-    check('Borrowed in G Mixolydian (♭VII and v already in key)', symbols(T.borrowedChords(N('G'), 'mixolydian')), 'Cm B♭ E♭ A° A');
+    // --- Borrowed chords (+ secondary dominants) ---
+    function borrowed(tonic, scaleId, size) { return T.borrowedChords(N(tonic), scaleId, size); }
+    check('Borrowed in C major', symbols(borrowed('C', 'major', 3)), 'Fm E♭ A♭ B♭ D° Gm A B D E');
+    check('Borrowed numerals in C major', numerals(borrowed('C', 'major', 3)), 'iv ♭III ♭VI ♭VII ii° v V/ii V/iii V/V V/vi');
+    check('Borrowed 7ths in C major', symbols(borrowed('C', 'major', 4)), 'Fm7 E♭maj7 A♭maj7 B♭7 Dm7♭5 Gm7 A7 B7 C7 D7 E7');
+    check('Borrowed 7th numerals in C major', numerals(borrowed('C', 'major', 4)), 'iv7 ♭IIImaj7 ♭VImaj7 ♭VII7 iiø7 v7 V7/ii V7/iii V7/IV V7/V V7/vi');
+    check('Borrowed in D major', symbols(borrowed('D', 'major', 3)), 'Gm F B♭ C E° Am B C♯ E F♯');
+    check('Borrowed in A minor', symbols(borrowed('A', 'minor', 3)), 'D E A B');
+    check('Borrowed 7ths in A minor', symbols(borrowed('A', 'minor', 4)), 'D7 E7 Amaj7 A7 B7 C7');
+    check('Borrowed in D Dorian (IV already in key)', symbols(borrowed('D', 'dorian', 3)), 'A D B E');
+    check('Borrowed in A harmonic minor (V already in key)', symbols(borrowed('A', 'harmonicMinor', 3)), 'D A B C');
+    check('Borrowed in G Mixolydian (♭VII and v already in key)', symbols(borrowed('G', 'mixolydian', 3)), 'Cm B♭ E♭ A° E A B');
+    check('Secondary dominant keeps its name in a new key', T.buildChord(N('G'), { deg: 5, semi: 9, quality: 'dom7', of: 'ii' }).symbol + ' ' + T.buildChord(N('G'), { deg: 5, semi: 9, quality: 'dom7', of: 'ii' }).numeral, 'E7 V7/ii');
 
     // --- Progressions change key ---
     var prog = [cTri[0], cTri[4], cTri[5], cTri[3]].map(function (c) { return { deg: c.deg, semi: c.semi, quality: c.quality }; });
@@ -102,7 +107,8 @@
     // --- Which tab a chord lives in ---
     check('Bm is in key (triads) in D', T.findChord(N('D'), 'major', { deg: 5, semi: 9, quality: 'min' }), { tab: 'key', size: 3 });
     check('Bm7 is in key (7ths) in D', T.findChord(N('D'), 'major', { deg: 5, semi: 9, quality: 'min7' }), { tab: 'key', size: 4 });
-    check('C is borrowed in D', T.findChord(N('D'), 'major', { deg: 6, semi: 10, quality: 'maj' }), { tab: 'borrowed' });
+    check('C is borrowed in D', T.findChord(N('D'), 'major', { deg: 6, semi: 10, quality: 'maj' }), { tab: 'borrowed', size: 3 });
+    check('A7 (V7/ii) is borrowed (7ths) in C', T.findChord(N('C'), 'major', { deg: 5, semi: 9, quality: 'dom7' }), { tab: 'borrowed', size: 4 });
     check('E♭maj7 is "any chord" in D', T.findChord(N('D'), 'major', { deg: 1, semi: 1, quality: 'maj7' }), { tab: 'any' });
 
     // --- Degree labels for notes outside the scale ---

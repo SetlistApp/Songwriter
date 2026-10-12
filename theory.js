@@ -177,13 +177,17 @@
     var root = spellFrom(tonic, spec.deg, spec.semi);
     var roman = ROMAN[spec.deg];
     var prefix = degreeText(spec.deg, spec.semi).replace(/\d+$/, '');
+    // Secondary dominants are named after the chord they lead to: V/ii, V7/vi.
+    var numeral = spec.of
+      ? 'V' + q.num + '/' + spec.of
+      : prefix + (q.minor ? roman.toLowerCase() : roman) + q.num;
     return {
-      deg: spec.deg, semi: spec.semi, quality: spec.quality,
+      deg: spec.deg, semi: spec.semi, quality: spec.quality, of: spec.of,
       root: root,
       notes: q.tones.map(function (t) { return spellFrom(root, t[0], t[1]); }),
       intervals: q.tones.map(function (t) { return t[1]; }),
       symbol: root.name + q.suffix,
-      numeral: prefix + (q.minor ? roman.toLowerCase() : roman) + q.num
+      numeral: numeral
     };
   }
 
@@ -200,32 +204,48 @@
 
   function sameChord(a, b) { return !!a && !!b && a.semi === b.semi && a.quality === b.quality; }
 
+  // Each borrowed chord as a triad (tri) and as a 7th chord (sev).
   var BORROWED = {
-    // Major-flavored keys borrow from the parallel minor (plus II from Lydian).
+    // Major-flavored keys borrow from the parallel minor.
     major: [
-      { deg: 3, semi: 5, quality: 'min' },   // iv
-      { deg: 2, semi: 3, quality: 'maj' },   // ♭III
-      { deg: 5, semi: 8, quality: 'maj' },   // ♭VI
-      { deg: 6, semi: 10, quality: 'maj' },  // ♭VII
-      { deg: 1, semi: 2, quality: 'dim' },   // ii°
-      { deg: 4, semi: 7, quality: 'min' },   // v
-      { deg: 1, semi: 2, quality: 'maj' }    // II
+      { deg: 3, semi: 5, tri: 'min', sev: 'min7' },   // iv
+      { deg: 2, semi: 3, tri: 'maj', sev: 'maj7' },   // ♭III
+      { deg: 5, semi: 8, tri: 'maj', sev: 'maj7' },   // ♭VI
+      { deg: 6, semi: 10, tri: 'maj', sev: 'dom7' },  // ♭VII
+      { deg: 1, semi: 2, tri: 'dim', sev: 'm7b5' },   // ii°
+      { deg: 4, semi: 7, tri: 'min', sev: 'min7' }    // v
     ],
     // Minor-flavored keys borrow from Dorian, harmonic minor and the parallel major.
     minor: [
-      { deg: 3, semi: 5, quality: 'maj' },   // IV
-      { deg: 4, semi: 7, quality: 'maj' },   // V
-      { deg: 4, semi: 7, quality: 'dom7' },  // V7
-      { deg: 0, semi: 0, quality: 'maj' }    // I (Picardy third)
+      { deg: 3, semi: 5, tri: 'maj', sev: 'dom7' },   // IV (Dorian)
+      { deg: 4, semi: 7, tri: 'maj', sev: 'dom7' },   // V (harmonic minor)
+      { deg: 0, semi: 0, tri: 'maj', sev: 'maj7' }    // I (Picardy third)
     ]
   };
 
-  /** Common borrowed chords, leaving out any that are already in the key. */
-  function borrowedChords(tonic, scaleId) {
+  /** "The V of" each major or minor chord in the key (not the I, which already has its V). */
+  function secondaryDominants(tonic, scaleId, size) {
+    return diatonicChords(tonic, scaleId, 3).filter(function (c, i) {
+      return i > 0 && (c.quality === 'maj' || c.quality === 'min');
+    }).map(function (target) {
+      return { deg: (target.deg + 4) % 7, semi: (target.semi + 7) % 12, quality: size === 4 ? 'dom7' : 'maj', of: target.numeral };
+    });
+  }
+
+  /** Borrowed chords plus secondary dominants, leaving out any already in the key and any repeats
+      (e.g. Lydian's II is the same chord as V/V, so it shows once, as V/V). size: 3 or 4. */
+  function borrowedChords(tonic, scaleId, size) {
+    size = size || 3;
     var inKey = diatonicChords(tonic, scaleId, 3).concat(diatonicChords(tonic, scaleId, 4));
-    return BORROWED[getScale(scaleId).flavor].filter(function (spec) {
-      return !inKey.some(function (c) { return sameChord(c, spec); });
-    }).map(function (spec) { return buildChord(tonic, spec); });
+    var specs = BORROWED[getScale(scaleId).flavor].map(function (b) {
+      return { deg: b.deg, semi: b.semi, quality: size === 4 ? b.sev : b.tri };
+    }).concat(secondaryDominants(tonic, scaleId, size));
+    var out = [];
+    specs.forEach(function (spec) {
+      var same = function (c) { return sameChord(c, spec); };
+      if (!inKey.some(same) && !out.some(same)) out.push(buildChord(tonic, spec));
+    });
+    return out;
   }
 
   /** The 12 roots for "Any chord", spelled for this key: [{ deg, semi, pc, name }], ordered from C. */
@@ -241,12 +261,13 @@
     return out.sort(function (a, b) { return a.pc - b.pc; });
   }
 
-  /** Which Chords tab a chord lives in: { tab: 'key', size } | { tab: 'borrowed' } | { tab: 'any' }. */
+  /** Which Chords tab a chord lives in: { tab: 'key' | 'borrowed', size } or { tab: 'any' }. */
   function findChord(tonic, scaleId, spec) {
     var match = function (c) { return sameChord(c, spec); };
     if (diatonicChords(tonic, scaleId, 3).some(match)) return { tab: 'key', size: 3 };
     if (diatonicChords(tonic, scaleId, 4).some(match)) return { tab: 'key', size: 4 };
-    if (borrowedChords(tonic, scaleId).some(match)) return { tab: 'borrowed' };
+    if (borrowedChords(tonic, scaleId, 3).some(match)) return { tab: 'borrowed', size: 3 };
+    if (borrowedChords(tonic, scaleId, 4).some(match)) return { tab: 'borrowed', size: 4 };
     return { tab: 'any' };
   }
 

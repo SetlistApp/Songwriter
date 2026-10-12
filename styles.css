@@ -92,7 +92,8 @@
   background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px;
   touch-action: none;   /* chords can be dragged straight away, so swiping on them doesn't scroll */
 }
-.sw-card { min-height: 40px; padding: 8px 10px; text-align: left; width: 100%; }
+.sw-card { min-height: 40px; padding: 8px 10px; text-align: left; width: 100%; flex-wrap: wrap; row-gap: 0; align-content: center; }
+/* A long numeral (♭IIImaj7) drops under the chord name instead of being cut off. */
 .sw-card b, .sw-chip b { font-family: var(--sw-display); font-weight: 600; font-size: 17px; line-height: 1.15; }
 .sw-card i, .sw-chip i { font-style: normal; font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); }
 .sw-3col .sw-card b { font-size: 16px; }
@@ -194,8 +195,9 @@
 .sw-sheet .sw-sub { margin-top: 14px; }
 .sw-sheet .sw-keys button { min-height: 44px; font-size: 18px; }
 .sw-sheet .sw-scales button { min-height: 38px; padding: 7px 12px; font-size: 13.5px; }
-/* Same look as the version line at the bottom of the Setlist app's menu. */
-.sw-version { font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); text-align: center; padding-top: 8px; margin-top: 16px; border-top: 1px solid var(--sw-line); }
+/* Version next to the title, same look as the Setlist app's header version. */
+.sw-brand { display: flex; align-items: baseline; gap: 8px; }
+.sw-ver { font-family: var(--sw-mono); font-size: 10.5px; color: var(--sw-dim); }
 .sw-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 .sw-keys button {
   background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px; min-height: 48px;
