@@ -115,6 +115,34 @@
     check('B♭ in D major is ♭6', T.degreeLabel(N('D'), 'major', 10), '♭6');
     check('E♭ in A blues is ♭5', T.degreeLabel(N('A'), 'blues', 3), '♭5');
 
+    // --- Voice leading ---
+    var C = N('C');
+    var spec = function (deg, semi, quality) { return { deg: deg, semi: semi, quality: quality }; };
+    var CGAmF = [spec(0, 0, 'maj'), spec(4, 7, 'maj'), spec(5, 9, 'min'), spec(3, 5, 'maj')];
+    var three = { notes: 3, inversions: true };
+    var cVoicings = T.chordVoicings(T.buildChord(C, CGAmF[0]), three).map(function (v) { return v.join(' '); });
+    check('C triad voicings include C4 E4 G4 and its inversions', ['60 64 67', '64 67 72', '55 60 64'].every(function (k) { return cVoicings.indexOf(k) >= 0; }), true);
+    check('Half-steps from C4 E4 G4 to B3 D4 G4', T.voiceMove([60, 64, 67], [59, 62, 67]), 3);
+    var smooth = T.smoothestVoicing(C, CGAmF, three);
+    check('C G Am F: smoothest total', T.pathTotal(smooth), 9);
+    check('C G Am F: shared notes stay put (G in C → G, C in Am → F)', [smooth[1].indexOf(67) >= 0 && smooth[0].indexOf(67) >= 0, smooth[2].indexOf(60) >= 0 && smooth[3].indexOf(60) >= 0], [true, true]);
+    check('C G Am F with inversions off: total', T.pathTotal(T.smoothestVoicing(C, CGAmF, { notes: 3, inversions: false })), 31);
+    check('Inversions off: root is always lowest', T.smoothestVoicing(C, CGAmF, { notes: 3, inversions: false }).map(function (v) { return v[0] % 12; }), [0, 7, 9, 5]);
+    var locked = T.smoothestVoicing(C, CGAmF, three, { 2: [72] });
+    check('Locking C5 on Am keeps it', locked[2].indexOf(72) >= 0, true);
+    var groups = T.voicingGroups(C, CGAmF, three, null, 3);
+    check('Groups: 3 groups, smoothest first, totals rising', groups.length === 3 && groups[0].total === 9 && groups[0].total < groups[1].total && groups[1].total < groups[2].total, true);
+    check('Groups: every path in a group has that total', groups.every(function (g) { return g.paths.every(function (p) { return T.pathTotal(p) === g.total; }); }), true);
+    var opts = T.chordVoicingOptions(C, CGAmF, smooth, 1, three);
+    check('One-chord options sorted least to most', opts.every(function (o, i) { return !i || opts[i - 1].total <= o.total; }), true);
+    check('One-chord options: smoothest is the current one', opts[0].voicing.join(), smooth[1].join());
+    var c4 = T.chordVoicings(T.buildChord(C, CGAmF[0]), { notes: 4 }).map(function (v) { return v.join(' '); });
+    check('4 notes: a triad with a doubled note (C4 E4 G4 C5)', c4.indexOf('60 64 67 72') >= 0, true);
+    check('4 notes: smoothest C G Am F has 4 notes per chord', T.smoothestVoicing(C, CGAmF, { notes: 4 }).every(function (v) { return v.length === 4; }), true);
+    var g7 = T.chordVoicings(T.buildChord(C, spec(4, 7, 'dom7')), three)[0].map(function (m) { return m % 12; }).sort(function (a, b) { return a - b; });
+    check('3 notes of G7 leave out the 5th (G B F)', g7, [5, 7, 11]);
+    check('All voicings fit in one octave', CGAmF.every(function (sp) { return T.chordVoicings(T.buildChord(C, sp), three).every(function (v) { return v[v.length - 1] - v[0] <= 12; }); }), true);
+
     return results;
   };
 

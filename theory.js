@@ -287,12 +287,123 @@
     return chord.intervals.map(function (semi) { return base + semi; });
   }
 
+  // ---------- Voice leading ----------
+  // A "voicing" is the exact notes of a chord as MIDI numbers, low to high (60 = middle C).
+  // These are the right-hand / guitar notes; the bass (the root, left hand or bass player) is implied.
+
+  var VOICE_LO = 53, VOICE_HI = 76;   // F3 to E5
+  var VOICE_CENTER = 64;              // E4: ties go to the voicing nearest the middle
+  var KEEP_PER_STEP = 24;             // partial paths kept per voicing when listing many options
+
+  /** Every voicing of a chord. opts: { notes: 3|4, inversions: true|false }.
+      3 notes: a triad (7th chords leave out the 5th). 4 notes: a 7th chord, or a triad with
+      any one note doubled. All notes fit within one octave so one hand can play them.
+      inversions false: the chord's root is always the lowest note. */
+  function chordVoicings(chord, opts) {
+    var count = (opts && opts.notes) || 3, inv = !opts || opts.inversions !== false;
+    var pcs = chord.notes.map(function (n) { return n.pc; });
+    var sets;
+    if (pcs.length >= 4 && count === 3) sets = [[pcs[0], pcs[1], pcs[3]]];
+    else if (pcs.length === 3 && count === 4) sets = pcs.map(function (d) { return pcs.concat([d]); });
+    else sets = [pcs.slice(0, count)];
+    var seen = {}, out = [];
+    sets.forEach(function (set) {
+      (function pick(k, chosen) {
+        if (k === set.length) {
+          var v = chosen.slice().sort(function (a, b) { return a - b; });
+          for (var i = 1; i < v.length; i++) if (v[i] === v[i - 1]) return;
+          if (v[v.length - 1] - v[0] > 12) return;
+          if (!inv && mod(v[0], 12) !== chord.root.pc) return;
+          var key = v.join();
+          if (!seen[key]) { seen[key] = true; out.push(v); }
+          return;
+        }
+        for (var m = VOICE_LO; m <= VOICE_HI; m++) if (mod(m, 12) === set[k]) pick(k + 1, chosen.concat([m]));
+      })(0, []);
+    });
+    return out.sort(function (a, b) { return a[0] - b[0] || a.join().localeCompare(b.join()); });
+  }
+
+  /** Half-steps the notes move from one voicing to the next (lowest to lowest, next to next...). */
+  function voiceMove(a, b) {
+    var t = 0;
+    for (var i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
+    return t;
+  }
+
+  function centerPenalty(v) {
+    var sum = 0;
+    v.forEach(function (m) { sum += m; });
+    return Math.abs(sum / v.length - VOICE_CENTER);
+  }
+
+  /** Voicings for each chord of a progression, keeping only those with every locked note.
+      locks: { chipIndex: [midi, ...] }. A lock that no voicing can satisfy is ignored. */
+  function progressionVoicings(tonic, specs, opts, locks) {
+    return specs.map(function (spec, i) {
+      var all = chordVoicings(buildChord(tonic, spec), opts);
+      var lock = locks && locks[i];
+      if (!lock || !lock.length) return all;
+      var kept = all.filter(function (v) { return lock.every(function (m) { return v.indexOf(m) >= 0; }); });
+      return kept.length ? kept : all;
+    });
+  }
+
+  function pathTotal(path) {
+    var t = 0;
+    for (var i = 1; i < path.length; i++) t += voiceMove(path[i - 1], path[i]);
+    return t;
+  }
+
+  /** Complete voicings of the progression with the least total movement, grouped by total.
+      Returns [{ total, paths: [[voicing, ...], ...] }], smoothest group first, at most `groups`. */
+  function voicingGroups(tonic, specs, opts, locks, groups) {
+    if (!specs.length) return [];
+    var lists = progressionVoicings(tonic, specs, opts, locks);
+    var rank = function (a, b) { return a.total - b.total || a.center - b.center; };
+    // Each step keeps the best few partial paths ending in each voicing.
+    var layer = lists[0].map(function (v) { return [{ path: [v], total: 0, center: centerPenalty(v) }]; });
+    for (var k = 1; k < lists.length; k++) {
+      var prev = [].concat.apply([], layer);
+      layer = lists[k].map(function (v) {
+        return prev.map(function (p) {
+          return { path: p.path.concat([v]), total: p.total + voiceMove(p.path[p.path.length - 1], v), center: p.center + centerPenalty(v) };
+        }).sort(rank).slice(0, KEEP_PER_STEP);
+      });
+    }
+    var done = [].concat.apply([], layer).sort(rank), out = [];
+    done.forEach(function (p) {
+      var g = out[out.length - 1];
+      if (g && g.total === p.total) g.paths.push(p.path);
+      else if (out.length < (groups || 3)) out.push({ total: p.total, paths: [p.path] });
+    });
+    return out;
+  }
+
+  /** The smoothest complete voicing (respecting locks). */
+  function smoothestVoicing(tonic, specs, opts, locks) {
+    var g = voicingGroups(tonic, specs, opts, locks, 1);
+    return g.length ? g[0].paths[0] : [];
+  }
+
+  /** Ways to play one chord of a chosen path, the others left as they are, sorted by how far
+      this chord's notes move: [{ voicing, moveIn, moveOut, total }]. */
+  function chordVoicingOptions(tonic, specs, path, index, opts, locks) {
+    var prev = path[index - 1], next = path[index + 1];
+    return progressionVoicings(tonic, specs, opts, locks)[index].map(function (v) {
+      var a = prev ? voiceMove(prev, v) : 0, b = next ? voiceMove(v, next) : 0;
+      return { voicing: v, moveIn: a, moveOut: b, total: a + b, center: centerPenalty(v) };
+    }).sort(function (x, y) { return x.total - y.total || x.center - y.center; });
+  }
+
   SW.theory = {
     LETTERS: LETTERS, SCALES: SCALES, SCALE_GROUPS: SCALE_GROUPS, QUALITIES: QUALITIES, ANY_TYPES: ANY_TYPES,
     note: note, parseNote: parseNote, getScale: getScale, chordScale: chordScale,
     scaleNotes: scaleNotes, keyChoices: keyChoices, respellTonic: respellTonic,
     buildChord: buildChord, diatonicChords: diatonicChords, borrowedChords: borrowedChords,
     anyRoots: anyRoots, findChord: findChord, sameChord: sameChord,
-    degreeLabel: degreeLabel, chordMidi: chordMidi
+    degreeLabel: degreeLabel, chordMidi: chordMidi,
+    chordVoicings: chordVoicings, voiceMove: voiceMove, pathTotal: pathTotal,
+    voicingGroups: voicingGroups, smoothestVoicing: smoothestVoicing, chordVoicingOptions: chordVoicingOptions
   };
 })(typeof window !== 'undefined' ? window : globalThis);

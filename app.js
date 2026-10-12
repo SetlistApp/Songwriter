@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta1';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta2';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
@@ -27,7 +27,16 @@
       shown: null,           // chord spec shown on the instrument (null = show the scale)
       selChip: -1,           // selected progression chip (tap a chord card to swap it)
       progression: [],       // chord specs, stored relative to the key
-      sheet: null            // 'key' | 'scale' | null
+      sheet: null,           // 'key' | 'scale' | null
+      page: 'progression',   // top tabs: 'progression' | 'voicing'
+      // Voice leading
+      vlNotes: 3,            // 3 or 4 notes per chord
+      vlInv: true,           // allow inversions
+      vlPath: null,          // chosen voicing for every chord (MIDI arrays); null = pick the smoothest
+      vlLocks: {},           // { chipIndex: [locked MIDI notes] }
+      vlSel: -1,             // chord picked on the roll (its options show below); -1 = "All chords"
+      vlGroups: 3,           // how many half-step groups to list ("Show more" adds 3)
+      vlSig: ''              // what the voicings were worked out for (key, chords, settings)
     };
     restoreSnapshot(state);
     const landMq = root.matchMedia(LAND_QUERY);
@@ -214,13 +223,162 @@
         </div>`;
     }
 
+    // ---------- Voice leading page ----------
+    const vlOpts = () => ({ notes: state.vlNotes, inversions: state.vlInv });
+    const pathKey = (path) => path.map((v) => v.join('.')).join('|');
+
+    /** Start fresh (smoothest, nothing locked) whenever the chords, key or settings change. */
+    function vlSync() {
+      const sig = JSON.stringify([state.tonic.name, state.progression, state.vlNotes, state.vlInv]);
+      if (sig !== state.vlSig) {
+        Object.assign(state, { vlSig: sig, vlPath: null, vlLocks: {}, vlSel: -1, vlGroups: 3 });
+      }
+      if (!state.vlPath) state.vlPath = T.smoothestVoicing(state.tonic, state.progression, vlOpts(), state.vlLocks);
+      if (state.vlSel >= state.progression.length) state.vlSel = -1;
+    }
+
+    function vlGroupsNow() {
+      return T.voicingGroups(state.tonic, state.progression, vlOpts(), state.vlLocks, state.vlGroups);
+    }
+
+    function vlRows() {
+      return state.progression.map((spec, i) => {
+        const c = chord(spec), labels = {};
+        (state.vlPath[i] || []).forEach((m) => {
+          const n = c.notes.find((x) => x.pc === m % 12);
+          labels[m] = n ? n.name : '';
+        });
+        return { name: c.symbol, rootPc: c.root.pc, labels };
+      });
+    }
+
+    /** "F♯4": spelled the way the chord spells it, plus the octave. */
+    const noteName = (m, i) => {
+      const n = chord(state.progression[i]).notes.find((x) => x.pc === m % 12);
+      return `${n ? n.name : ''}${Math.floor(m / 12) - 1}`;
+    };
+
+    function vlControls() {
+      return `<div class="sw-vlbar">
+        ${seg('vl-notes', [[3, '3 notes'], [4, '4 notes']], state.vlNotes, 'sw-sm')}
+        <button class="sw-switch ${state.vlInv ? 'sw-on' : ''}" data-act="vl-inv"><span></span>Inversions</button>
+        <span class="sw-total"><b>${T.pathTotal(state.vlPath)}</b> half-steps</span>
+      </div>`;
+    }
+
+    function vlRoll(width) {
+      return `<div class="sw-panel sw-vlpanel">${INST.voiceRoll({ path: state.vlPath, rows: vlRows(), width, sel: state.vlSel, locks: state.vlLocks })}</div>`;
+    }
+
+    /** "All chords": every complete voicing, grouped by total half-steps. */
+    function vlGroupList() {
+      const groups = vlGroupsNow();
+      const shown = groups.flatMap((g) => g.paths.slice(0, 3));
+      const range = INST.rollRange(shown);
+      const roots = state.progression.map((spec) => chord(spec).root.pc);
+      const cur = pathKey(state.vlPath);
+      const h = Math.max(58, state.progression.length * 13);
+      return `<div class="sw-optbox">
+        <div class="sw-opthead"><div><b>All chords</b> · ways to voice the whole progression</div></div>
+        ${groups.map((g, gi) => `<div class="sw-grp">
+          <div class="sw-grph">${g.total} half-steps <span>· ${g.paths.length} way${g.paths.length > 1 ? 's' : ''}${g.paths.length > 3 ? ', showing 3' : ''}</span></div>
+          <div class="sw-thumbs">${g.paths.slice(0, 3).map((p, pi) =>
+            `<button class="sw-thumb ${pathKey(p) === cur ? 'sw-on' : ''}" data-act="vl-pick" data-g="${gi}" data-p="${pi}">${INST.voiceRollMini(p, roots, range, 96, h)}</button>`).join('')}</div>
+        </div>`).join('')}
+        ${groups.length === state.vlGroups ? '<button class="sw-more" data-act="vl-more">Show more</button>' : ''}
+        <div class="sw-opthint">Tap a preview to use it. Tap a chord name on the roll to swap just that chord.</div>
+      </div>`;
+    }
+
+    /** One chord: its voicings, sorted by how far its notes move. */
+    function vlChordList() {
+      const i = state.vlSel, names = state.progression.map((spec) => chord(spec).symbol);
+      const options = T.chordVoicingOptions(state.tonic, state.progression, state.vlPath, i, vlOpts(), state.vlLocks).slice(0, 6);
+      const cur = state.vlPath[i].join('.');
+      const lock = state.vlLocks[i] || [];
+      return `<div class="sw-optbox">
+        <button class="sw-back" data-act="vl-back">‹ All chords</button>
+        <div class="sw-opthead">
+          <div><b>${names[i]}</b> · ways to play it${lock.length ? ` with <span class="sw-gold">${lock.map((m) => noteName(m, i)).join(' ')} 🔒</span>` : ''}</div>
+          <button class="sw-lockbtn ${lock.length ? 'sw-on' : ''}" data-act="vl-lock">${lock.length ? 'Unlock' : '🔒 Lock'}</button>
+        </div>
+        ${options.map((o, k) => `<button class="sw-opt ${o.voicing.join('.') === cur ? 'sw-on' : ''}" data-act="vl-option" data-k="${k}">
+          <span class="sw-rank">${k + 1}</span>
+          <span class="sw-info"><b>${o.voicing.map((m) => noteName(m, i)).join(' · ')}</b>${k === 0 ? '<span class="sw-best">smoothest</span>' : ''}
+            <span class="sw-sub2">${[i > 0 ? `${o.moveIn} in from ${names[i - 1]}` : '', i < names.length - 1 ? `${o.moveOut} out to ${names[i + 1]}` : ''].filter(Boolean).join(' · ') || 'only chord'}</span></span>
+          <span class="sw-hs">${o.total}<small>half-steps</small></span>
+        </button>`).join('')}
+        <div class="sw-opthint">${lock.length ? 'Only voicings with the locked notes are listed. The other chords re-arrange around them.' : 'Tap an option to use it. Lock keeps it, or tap a circle on the roll to lock just that note.'}</div>
+      </div>`;
+    }
+
+    function pageTabs() {
+      return `<div class="sw-tabs sw-pagetabs">${[['progression', 'Progression'], ['voicing', 'Voice leading']].map(([v, label]) =>
+        `<button class="sw-tab ${state.page === v ? 'sw-on' : ''}" data-act="page" data-arg="${v}">${label}</button>`).join('')}</div>`;
+    }
+
+    function voicingPage(mode) {
+      if (!state.progression.length) {
+        return '<div class="sw-empty sw-vlempty">No chords yet.<br>Build a progression on the Progression tab, then come back here.</div>';
+      }
+      vlSync();
+      const w = root.innerWidth;
+      if (mode === 'desk') {
+        return `<div class="sw-cols"><div class="sw-main">${vlControls()}${vlRoll(470 - 22)}</div>
+          <div class="sw-side">${state.vlSel >= 0 ? vlChordList() : vlGroupList()}</div></div>`;
+      }
+      return vlControls() + vlRoll(w - 32 - 22) + (state.vlSel >= 0 ? vlChordList() : vlGroupList());
+    }
+
+    function vlAct(name, data) {
+      const i = +data.idx;
+      switch (name) {
+        case 'vl-notes': state.vlNotes = +data.arg; break;
+        case 'vl-inv': state.vlInv = !state.vlInv; break;
+        case 'vl-chord': state.vlSel = state.vlSel === i ? -1 : i; break;
+        case 'vl-back': state.vlSel = -1; break;
+        case 'vl-more': state.vlGroups += 3; break;
+        case 'vl-pick': state.vlPath = vlGroupsNow()[+data.g].paths[+data.p].map((v) => v.slice()); break;
+        case 'vl-option': {
+          const o = T.chordVoicingOptions(state.tonic, state.progression, state.vlPath, state.vlSel, vlOpts(), state.vlLocks)[+data.k];
+          state.vlPath = state.vlPath.map((v, k) => (k === state.vlSel ? o.voicing.slice() : v));
+          break;
+        }
+        case 'vl-lock': {
+          const k = state.vlSel;
+          if ((state.vlLocks[k] || []).length) delete state.vlLocks[k];
+          else state.vlLocks[k] = state.vlPath[k].slice();
+          state.vlPath = T.smoothestVoicing(state.tonic, state.progression, vlOpts(), state.vlLocks);
+          break;
+        }
+        case 'vl-note': {
+          // Tap a circle to lock (or unlock) just that note; everything else re-arranges around it.
+          const m = +data.midi, lock = (state.vlLocks[i] || []).slice(), at = lock.indexOf(m);
+          if (at >= 0) lock.splice(at, 1); else lock.push(m);
+          if (lock.length) state.vlLocks[i] = lock; else delete state.vlLocks[i];
+          state.vlSel = i;
+          state.vlPath = T.smoothestVoicing(state.tonic, state.progression, vlOpts(), state.vlLocks);
+          break;
+        }
+        default: return false;
+      }
+      return true;
+    }
+
     function render() {
       const mode = layout();
       const oldScroll = el.querySelector('.sw-scroll');
       const scrollLeft = oldScroll ? oldScroll.scrollLeft : 0;
       const drawing = instrumentDrawing(mode);
       let page;
-      if (mode === 'land') {
+      if (state.page === 'voicing') {
+        page = mode === 'land'
+          ? `<div class="sw-page">${voicingPage(mode)}</div>`
+          : `<div class="sw-page">
+            <header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${picker()}</header>
+            ${pageTabs()}${voicingPage(mode)}
+          </div>`;
+      } else if (mode === 'land') {
         page = `<div class="sw-page">
           <div class="sw-land-top">${progressionSection(false, 'No chords yet. Turn your phone upright to build one.')}<div class="sw-picks">${instrumentToggles()}</div></div>
           <div class="sw-scroll">${drawing.svg}</div>
@@ -228,6 +386,7 @@
       } else {
         page = `<div class="sw-page">
           <header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${picker()}</header>
+          ${pageTabs()}
           <div class="sw-cols">
             <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Drag a chord here from above.')}</div>
             <div class="sw-side">${instrumentPanel(mode, drawing)}</div>
@@ -296,7 +455,8 @@
         case 'instrument': state.instrument = arg; break;
         case 'labels': state.labels = arg; break;
         case 'show-scale': state.shown = null; state.selChip = -1; break;
-        default: return;
+        case 'page': state.page = arg; break;
+        default: if (!vlAct(name, data)) return;
       }
       render();
     }

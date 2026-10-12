@@ -86,5 +86,103 @@
     return { svg: s + '</svg>', xOf: function (midi) { return xOf[midi]; } };
   }
 
-  SW.instruments = { fretboard: fretboard, piano: piano };
+  // ---------- Voice-leading piano roll ----------
+
+  /** Lowest/highest MIDI to draw for some voicings: widened so the left edge is a C or F and the
+      right edge an E or B (white keys with no black key outside them, so none is cut in half). */
+  function rollRange(paths) {
+    var lo = Infinity, hi = -Infinity;
+    paths.forEach(function (path) { path.forEach(function (v) { v.forEach(function (m) { lo = Math.min(lo, m); hi = Math.max(hi, m); }); }); });
+    while (lo % 12 !== 0 && lo % 12 !== 5) lo--;
+    while (hi % 12 !== 4 && hi % 12 !== 11) hi++;
+    return { lo: lo, hi: hi };
+  }
+
+  function keyColumns(lo, hi, left, width) {
+    var whites = [];
+    for (var m = lo; m <= hi; m++) if (!BLACK[m % 12]) whites.push(m);
+    var ww = width / whites.length, bw = ww * 0.6, x = {}, w = {};
+    whites.forEach(function (m, i) { x[m] = left + i * ww; w[m] = ww; });
+    for (var k = lo; k <= hi; k++) if (BLACK[k % 12]) { x[k] = x[k - 1] + ww - bw / 2; w[k] = bw; }
+    return { whites: whites, ww: ww, bw: bw, x: x, w: w, cx: function (m) { return x[m] + w[m] / 2; } };
+  }
+
+  function stripes(cols, lo, hi, top, height) {
+    var s = '';
+    cols.whites.forEach(function (m) { s += '<rect class="sw-vr-white" x="' + cols.x[m] + '" y="' + top + '" width="' + cols.ww + '" height="' + height + '"/>'; });
+    for (var m = lo; m <= hi; m++) if (BLACK[m % 12]) s += '<rect class="sw-vr-black" x="' + cols.x[m] + '" y="' + top + '" width="' + cols.bw + '" height="' + height + '"/>';
+    return s;
+  }
+
+  /** The roll: keyboard along the bottom, chords stacking upward (first chord at the bottom),
+      a circle per note, lines joining each note to the next chord's.
+      o: { path: [voicing...], rows: [{ name, rootPc, labels: { midi: 'F♯' } }], width, sel, locks } */
+  function voiceRoll(o) {
+    var path = o.path, n = path.length, W = o.width || 334, rowH = 24, gapH = 22, keysH = 34, r = 9;
+    // The name strip on the left widens to fit the longest chord name (E♭maj7, C♯m7♭5).
+    var longest = Math.max.apply(null, o.rows.map(function (row) { return row.name.length; }));
+    var gut = Math.max(40, Math.min(84, longest * 7.4 + 12));
+    var range = rollRange([path]), cols = keyColumns(range.lo, range.hi, gut, W - gut);
+    var rollH = n * rowH + (n - 1) * gapH + 8, H = rollH + keysH + 14;
+    var cy = function (i) { return rollH - 4 - rowH / 2 - i * (rowH + gapH); };
+    var s = '<svg class="sw-vroll" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+    s += stripes(cols, range.lo, range.hi, 0, rollH);
+    if (o.sel >= 0) s += '<rect class="sw-vr-sel" x="' + gut + '" y="' + (cy(o.sel) - rowH / 2 - 2) + '" width="' + (W - gut) + '" height="' + (rowH + 4) + '"/>';
+    // keyboard
+    var ky = rollH + 2;
+    cols.whites.forEach(function (m) {
+      s += '<rect class="sw-key-white" x="' + (cols.x[m] + 0.5) + '" y="' + ky + '" width="' + (cols.ww - 1) + '" height="' + keysH + '" rx="3"/>';
+      if (m % 12 === 0 || m === range.lo || m === range.hi) {
+        s += '<text class="sw-key-octave" x="' + cols.cx(m) + '" y="' + (ky + keysH + 11) + '">' + ['C', '', 'D', '', 'E', 'F', '', 'G', '', 'A', '', 'B'][m % 12] + (Math.floor(m / 12) - 1) + '</text>';
+      }
+    });
+    for (var m = range.lo; m <= range.hi; m++) if (BLACK[m % 12]) s += '<rect class="sw-key-black" x="' + cols.x[m] + '" y="' + ky + '" width="' + cols.bw + '" height="' + keysH * 0.62 + '" rx="2"/>';
+    // lines between chords
+    for (var i = 1; i < n; i++) {
+      for (var k = 0; k < path[i].length; k++) {
+        var a = path[i - 1][k], b = path[i][k], d = b - a;
+        s += '<line class="' + (d ? 'sw-vr-move' : 'sw-vr-stay') + '" x1="' + cols.cx(a) + '" y1="' + cy(i - 1) + '" x2="' + cols.cx(b) + '" y2="' + cy(i) + '"/>';
+        if (d) {
+          s += '<text class="sw-vr-num" x="' + ((cols.cx(a) + cols.cx(b)) / 2 + (d > 0 ? 9 : -9)) + '" y="' + ((cy(i - 1) + cy(i)) / 2 + 3) + '">' + (d > 0 ? '+' + d : '−' + (-d)) + '</text>';
+        }
+      }
+    }
+    // circles and chord names (both tappable)
+    path.forEach(function (v, i) {
+      var row = o.rows[i], lock = (o.locks && o.locks[i]) || [];
+      v.forEach(function (m) {
+        var x = cols.cx(m), y = cy(i);
+        s += '<g data-act="vl-note" data-idx="' + i + '" data-midi="' + m + '">' +
+          '<circle class="sw-vr-hit" cx="' + x + '" cy="' + y + '" r="' + (r + 6) + '"/>' +
+          '<circle class="' + (m % 12 === row.rootPc ? 'sw-vr-root' : 'sw-vr-tone') + '" cx="' + x + '" cy="' + y + '" r="' + r + '"/>' +
+          '<text class="sw-vr-txt" x="' + x + '" y="' + (y + 3.4) + '">' + (row.labels[m] || '') + '</text>' +
+          (lock.indexOf(m) >= 0 ? '<text class="sw-vr-lock" x="' + (x + 10) + '" y="' + (y - 5) + '">🔒</text>' : '') + '</g>';
+      });
+      s += '<g data-act="vl-chord" data-idx="' + i + '"><rect class="sw-vr-hit" x="0" y="' + (cy(i) - rowH / 2 - 6) + '" width="' + gut + '" height="' + (rowH + 12) + '"/>' +
+        '<text class="sw-vr-name' + (i === o.sel ? ' sw-on' : '') + '" x="' + (gut / 2 - 2) + '" y="' + (cy(i) + 5) + '">' + row.name + '</text>' +
+        (lock.length ? '<text class="sw-vr-lock" x="' + (gut / 2 - 2) + '" y="' + (cy(i) - 9) + '">🔒</text>' : '') + '</g>';
+    });
+    return s + '</svg>';
+  }
+
+  /** Small preview of a complete voicing, drawn over the given range. */
+  function voiceRollMini(path, rootPcs, range, W, H) {
+    var n = path.length, span = range.hi - range.lo + 1;
+    var x = function (m) { return 4 + (m - range.lo + 0.5) * ((W - 8) / span); };
+    var y = function (i) { return n === 1 ? H / 2 : H - 7 - i * ((H - 14) / (n - 1)); };
+    var s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+    for (var m = range.lo; m <= range.hi; m++) {
+      s += '<rect class="' + (BLACK[m % 12] ? 'sw-vr-black' : 'sw-vr-white') + '" x="' + (4 + (m - range.lo) * ((W - 8) / span)) + '" y="0" width="' + ((W - 8) / span) + '" height="' + H + '"/>';
+    }
+    for (var i = 1; i < n; i++) for (var k = 0; k < path[i].length; k++) {
+      var a = path[i - 1][k], b = path[i][k];
+      s += '<line class="' + (a === b ? 'sw-vr-stay' : 'sw-vr-move') + ' sw-thin" x1="' + x(a) + '" y1="' + y(i - 1) + '" x2="' + x(b) + '" y2="' + y(i) + '"/>';
+    }
+    path.forEach(function (v, i) {
+      v.forEach(function (m) { s += '<circle class="' + (m % 12 === rootPcs[i] ? 'sw-vr-root' : 'sw-vr-tone') + ' sw-thin" cx="' + x(m) + '" cy="' + y(i) + '" r="3.2"/>'; });
+    });
+    return s + '</svg>';
+  }
+
+  SW.instruments = { fretboard: fretboard, piano: piano, voiceRoll: voiceRoll, voiceRollMini: voiceRollMini, rollRange: rollRange };
 })(typeof window !== 'undefined' ? window : globalThis);
