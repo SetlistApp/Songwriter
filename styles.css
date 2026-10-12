@@ -46,6 +46,7 @@
   font-family: var(--sw-display); font-weight: 600; font-size: 16px;
 }
 .sw-pick span { color: var(--sw-dim); font-size: 10px; }
+.sw-pick small { font-family: var(--sw-mono); font-weight: 400; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sw-dim); margin-right: 2px; }
 .sw-label {
   font-family: var(--sw-display); font-weight: 600; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--sw-dim); margin: 16px 0 7px; display: flex; justify-content: space-between; align-items: center; min-height: 20px;
@@ -89,7 +90,7 @@
 .sw-card, .sw-chip {
   display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden;
   background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px;
-  touch-action: manipulation;
+  touch-action: none;   /* chords can be dragged straight away, so swiping on them doesn't scroll */
 }
 .sw-card { min-height: 40px; padding: 8px 10px; text-align: left; width: 100%; }
 .sw-card b, .sw-chip b { font-family: var(--sw-display); font-weight: 600; font-size: 17px; line-height: 1.15; }
@@ -205,8 +206,12 @@
 /* ---------- Phone turned sideways ---------- */
 .sw-land .sw-page { padding: 8px 16px 12px; }
 .sw-land .sw-hdr { position: static; padding: 0 0 8px; }
-.sw-land .sw-prog { margin-bottom: 10px; min-height: 0; }
-.sw-land .sw-chip { min-height: 34px; padding: 5px 10px; }
-.sw-land .sw-chip b { font-size: 15px; }
+.sw-land-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.sw-land-top section { flex: 1; min-width: 0; }
+.sw-land .sw-prog { min-height: 0; gap: 6px; }
+.sw-land .sw-chip { min-height: 44px; padding: 8px 14px; }
+.sw-land .sw-chip b { font-size: 20px; }
+.sw-land .sw-chip i { font-size: 11px; }
+.sw-land .sw-empty { padding: 10px; }
 .sw-empty.sw-over { border-color: var(--sw-gold); color: var(--sw-text); }
 .sw-keepcase { text-transform: none; }

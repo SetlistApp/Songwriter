@@ -10,7 +10,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const HOLD_MS = 280;   // how long to press a chord before it can be dragged (phones)
+  const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
 
   function mount(el) {
     const state = {
@@ -53,7 +53,7 @@
     // ---------- Drawing ----------
     function pickers() {
       return `<div class="sw-picks">
-        <button class="sw-pick" data-act="open-sheet" data-arg="key">${state.tonic.name} <span>▾</span></button>
+        <button class="sw-pick" data-act="open-sheet" data-arg="key"><small>Key</small>${state.tonic.name} <span>▾</span></button>
         <button class="sw-pick" data-act="open-sheet" data-arg="scale">${scale().name} <span>▾</span></button>
       </div>`;
     }
@@ -73,7 +73,7 @@
       const swapping = state.selChip >= 0;
       const hint = swapping
         ? `<span class="sw-hint sw-gold">Tap a chord to swap it in for ${chord(state.progression[state.selChip]).symbol}</span>`
-        : '<span class="sw-hint">Tap to see · hold &amp; drag to add</span>';
+        : '<span class="sw-hint">Tap to see · drag to add</span>';
       let body;
 
       if (state.tab === 'key') {
@@ -99,7 +99,7 @@
           <div class="sw-types">${T.ANY_TYPES.map((q) =>
             `<button class="${q === state.anyType ? 'sw-on' : ''}" data-act="any-type" data-arg="${q}">${T.QUALITIES[q].label}</button>`).join('')}</div>
           <button class="sw-card sw-result ${T.sameChord(result, state.shown) ? 'sw-sel' : ''}" data-act="card" data-drag="card" data-spec="${specAttr(result)}">
-            <b>${result.symbol}</b><i>${result.numeral}</i><span>hold &amp; drag to add</span></button>`;
+            <b>${result.symbol}</b><i>${result.numeral}</i><span>drag to add</span></button>`;
       }
 
       return `<div class="sw-label">Chords</div>
@@ -155,7 +155,7 @@
         let o = { frets: 22, fw: 44, sh: 28, openW: 34, mark };
         if (mode === 'land') {
           const avail = w - 32;
-          o = { frets: 22, openW: 26, fw: (avail - 26 - 6) / 22, sh: clamp((h - 150) / 5, 20, 40), mark };
+          o = { frets: 22, openW: 26, fw: (avail - 26 - 6) / 22, sh: clamp((h - 115) / 5, 20, 42), mark };
         } else if (mode === 'desk') {
           const avail = Math.min(w, 1400) - 32 - 470 - 28 - 26;
           o.fw = clamp((avail - 34 - 6) / 22, 26, 44);
@@ -163,7 +163,7 @@
         return { svg: INST.fretboard(o), c4: 0 };
       }
       let o = { ww: 34, wh: 150, mark };
-      if (mode === 'land') o = { ww: (w - 34) / 22, wh: clamp(h - 140, 90, 240), mark };
+      if (mode === 'land') o = { ww: (w - 34) / 22, wh: clamp(h - 105, 90, 250), mark };
       else if (mode === 'desk') o.ww = clamp((Math.min(w, 1400) - 32 - 470 - 28 - 26 - 2) / 22, 26, 40);
       const p = INST.piano(o);
       return { svg: p.svg, c4: p.xOf(60) };
@@ -224,15 +224,14 @@
       let page;
       if (mode === 'land') {
         page = `<div class="sw-page">
-          <header class="sw-hdr">${pickers()}<div class="sw-picks">${instrumentToggles()}</div></header>
-          ${progressionSection(false, 'No chords yet. Turn your phone upright to build a progression.')}
+          <div class="sw-land-top">${progressionSection(false, 'No chords yet. Turn your phone upright to build one.')}<div class="sw-picks">${instrumentToggles()}</div></div>
           <div class="sw-scroll">${drawing.svg}</div>
         </div>`;
       } else {
         page = `<div class="sw-page">
           <header class="sw-hdr"><div class="sw-logo">Song<b>writer</b></div>${pickers()}</header>
           <div class="sw-cols">
-            <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Hold a chord above and drag it here.')}</div>
+            <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Drag a chord here from above.')}</div>
             <div class="sw-side">${instrumentPanel(mode, drawing)}</div>
           </div>
         </div>`;
@@ -323,8 +322,7 @@
     });
 
     // ---------- Drag and drop ----------
-    // Phones: press and hold, then drag (a quick swipe still scrolls the page).
-    // Mouse: just drag.
+    // Press a chord and move your finger (or mouse) to drag it. A tap without moving is a normal tap.
     el.addEventListener('pointerdown', (e) => {
       if (e.button > 0 || drag) return;
       const src = e.target.closest('[data-drag]');
@@ -335,7 +333,6 @@
         x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY,
         touch: e.pointerType !== 'mouse', active: false, insertAt: -1, overRemove: false
       };
-      if (drag.touch) drag.timer = setTimeout(startDrag, HOLD_MS);
       document.addEventListener('pointermove', onPointerMove);
       document.addEventListener('pointerup', onPointerUp);
       document.addEventListener('pointercancel', onPointerCancel);
@@ -349,9 +346,7 @@
       if (!drag) return;
       drag.x = e.clientX; drag.y = e.clientY;
       if (!drag.active) {
-        const moved = Math.hypot(drag.x - drag.x0, drag.y - drag.y0);
-        if (drag.touch && moved > 10) endDrag();        // it's a scroll, not a hold
-        else if (!drag.touch && moved > 5) startDrag();
+        if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) > DRAG_START_PX) startDrag();
         return;
       }
       e.preventDefault();
@@ -361,16 +356,21 @@
 
     function onPointerUp() {
       if (!drag) return;
-      if (drag.active) {
-        drop();
-        suppressClick = true;                            // the drag shouldn't also count as a tap
-        setTimeout(() => { suppressClick = false; }, 400);
-      }
+      // A plain tap: don't redraw here, or the tap would land on a button that no longer exists.
+      if (!drag.active) { endDrag(); return; }
+      drop();
+      suppressClick = true;                              // the drag shouldn't also count as a tap
+      setTimeout(() => { suppressClick = false; }, 400);
       endDrag();
       render();
     }
 
-    function onPointerCancel() { endDrag(); render(); }
+    function onPointerCancel() {
+      if (!drag) return;
+      const wasActive = drag.active;
+      endDrag();
+      if (wasActive) render();
+    }
 
     function startDrag() {
       if (!drag) return;
@@ -469,7 +469,6 @@
 
     function endDrag() {
       if (!drag) return;
-      clearTimeout(drag.timer);
       cancelAnimationFrame(drag.raf);
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', onPointerUp);
