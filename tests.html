@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Songwriter tests</title>
+  <style>
+    body { margin: 0; padding: 20px 16px; background: #121214; color: #f1ede4; font: 14px/1.5 system-ui, sans-serif; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .summary { margin: 0 0 16px; font-weight: 600; }
+    .pass { color: #4fae7a; } .fail { color: #d9704a; }
+    li { margin: 2px 0; } code { color: #8f8a83; }
+  </style>
+</head>
+<body>
+  <h1>Songwriter theory tests</h1>
+  <p class="summary" id="summary"></p>
+  <ul id="list"></ul>
+  <script src="theory.js"></script>
+  <script src="tests.js"></script>
+  <script>
+    var results = SW.runTests();
+    var failed = results.filter(function (r) { return !r.ok; }).length;
+    var summary = document.getElementById('summary');
+    summary.textContent = (results.length - failed) + ' passed, ' + failed + ' failed';
+    summary.className = 'summary ' + (failed ? 'fail' : 'pass');
+    document.getElementById('list').innerHTML = results.map(function (r) {
+      return '<li class="' + (r.ok ? 'pass' : 'fail') + '">' + (r.ok ? '✓ ' : '✗ ') + r.name +
+        (r.ok ? '' : '<br><code>got ' + JSON.stringify(r.got) + ', wanted ' + JSON.stringify(r.want) + '</code>') + '</li>';
+    }).join('');
+  </script>
+</body>
+</html>

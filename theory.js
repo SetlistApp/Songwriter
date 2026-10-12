@@ -1,0 +1,277 @@
+/* Songwriter: music theory.
+   Pure functions only (no screen code), so they can be tested, reused by the
+   Setlist app later, and fed to a sound engine.
+
+   Words used below:
+   - pc ("pitch class"): a note's position in the octave, 0-11 (C=0, C♯/D♭=1 … B=11).
+   - letter: 0-6 for C D E F G A B.  acc: accidentals (+1 = ♯, -1 = ♭, ±2 = double).
+   - A chord "spec" is stored relative to the key, not by name:
+       { deg: letter steps above the key (0-6), semi: half-steps above the key (0-11), quality }
+     e.g. vi in any major key is { deg: 5, semi: 9, quality: 'min' }. That's what makes
+     a progression change key automatically.
+*/
+(function (root) {
+  var SW = root.SW = root.SW || {};
+
+  var LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  var LETTER_PC = [0, 2, 4, 5, 7, 9, 11];   // also the major scale, in half-steps
+  var ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+  // Letter step to use for a chromatic note that isn't in the scale: ♭2 2 ♭3 3 4 ♭5 5 ♭6 6 ♭7 7
+  var CHROMATIC_DEG = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6];
+
+  function mod(n, m) { return ((n % m) + m) % m; }
+
+  function accText(acc) {
+    if (acc === 0) return '';
+    if (acc === 2) return '𝄪';
+    if (acc === -2) return '𝄫';
+    return new Array(Math.abs(acc) + 1).join(acc > 0 ? '♯' : '♭');
+  }
+
+  function note(letter, acc) {
+    return { letter: letter, acc: acc, pc: mod(LETTER_PC[letter] + acc, 12), name: LETTERS[letter] + accText(acc) };
+  }
+
+  /** "F#", "Bb", "F♯", "B♭" → note object. */
+  function parseNote(text) {
+    var letter = LETTERS.indexOf(text.charAt(0).toUpperCase());
+    if (letter < 0) throw new Error('Not a note: ' + text);
+    var acc = 0;
+    for (var i = 1; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (ch === '#' || ch === '♯') acc++;
+      else if (ch === 'b' || ch === '♭') acc--;
+    }
+    return note(letter, acc);
+  }
+
+  /** The note `letterSteps` letters and `semi` half-steps above `tonic`, spelled correctly. */
+  function spellFrom(tonic, letterSteps, semi) {
+    var letter = mod(tonic.letter + letterSteps, 7);
+    var pc = mod(tonic.pc + semi, 12);
+    return note(letter, mod(pc - LETTER_PC[letter] + 6, 12) - 6);
+  }
+
+  /** Degree label compared with the major scale: (2, 3) → "♭3". */
+  function degreeText(deg, semi) {
+    return accText(mod(semi - LETTER_PC[deg] + 6, 12) - 6) + (deg + 1);
+  }
+
+  // ---------- Scales ----------
+
+  var SCALES = [
+    { id: 'major', name: 'Major', group: 'Major & minor', steps: [0, 2, 4, 5, 7, 9, 11], flavor: 'major' },
+    { id: 'minor', name: 'Natural minor', group: 'Major & minor', steps: [0, 2, 3, 5, 7, 8, 10], flavor: 'minor' },
+    // Spelled with the natural-minor key signature, so G♯ harmonic minor gets F𝄪 like in real charts.
+    { id: 'harmonicMinor', name: 'Harmonic minor', group: 'Major & minor', steps: [0, 2, 3, 5, 7, 8, 11], flavor: 'minor', signature: 'minor' },
+    { id: 'dorian', name: 'Dorian', group: 'Modes', steps: [0, 2, 3, 5, 7, 9, 10], flavor: 'minor' },
+    { id: 'phrygian', name: 'Phrygian', group: 'Modes', steps: [0, 1, 3, 5, 7, 8, 10], flavor: 'minor' },
+    { id: 'lydian', name: 'Lydian', group: 'Modes', steps: [0, 2, 4, 6, 7, 9, 11], flavor: 'major' },
+    { id: 'mixolydian', name: 'Mixolydian', group: 'Modes', steps: [0, 2, 4, 5, 7, 9, 10], flavor: 'major' },
+    { id: 'locrian', name: 'Locrian', group: 'Modes', steps: [0, 1, 3, 5, 6, 8, 10], flavor: 'minor' },
+    // 5- and 6-note scales borrow their chords (and spelling) from a full "parent" scale.
+    { id: 'majorPentatonic', name: 'Major pentatonic', group: 'Pentatonic & blues', steps: [0, 2, 4, 7, 9], letters: [0, 1, 2, 4, 5], flavor: 'major', parent: 'major' },
+    { id: 'minorPentatonic', name: 'Minor pentatonic', group: 'Pentatonic & blues', steps: [0, 3, 5, 7, 10], letters: [0, 2, 3, 4, 6], flavor: 'minor', parent: 'minor' },
+    { id: 'blues', name: 'Blues', group: 'Pentatonic & blues', steps: [0, 3, 5, 6, 7, 10], letters: [0, 2, 3, 4, 4, 6], flavor: 'minor', parent: 'minor',
+      // The "blue note" is ♭5, but written ♯4 when ♭5 would need a double flat (E♭ blues: A, not B𝄫).
+      fallbackLetters: { 3: 3 } }
+  ];
+  var SCALE_GROUPS = ['Major & minor', 'Modes', 'Pentatonic & blues'];
+
+  function getScale(id) {
+    for (var i = 0; i < SCALES.length; i++) if (SCALES[i].id === id) return SCALES[i];
+    throw new Error('Unknown scale: ' + id);
+  }
+  function letterSteps(scale) { return scale.letters || [0, 1, 2, 3, 4, 5, 6]; }
+  /** The 7-note scale the chords come from. */
+  function chordScale(scale) { return scale.parent ? getScale(scale.parent) : scale; }
+  /** The 7-note scale whose key signature decides sharps vs flats. */
+  function signatureScale(scale) { return scale.signature ? getScale(scale.signature) : chordScale(scale); }
+
+  /** Notes of a scale: [{ name, pc, letter, acc, deg, semi, degree: "♭3" }]. */
+  function scaleNotes(tonic, scaleId) {
+    var scale = getScale(scaleId), lets = letterSteps(scale);
+    return scale.steps.map(function (semi, i) {
+      var deg = lets[i];
+      var n = spellFrom(tonic, deg, semi);
+      if (Math.abs(n.acc) > 1 && scale.fallbackLetters && i in scale.fallbackLetters) {
+        deg = scale.fallbackLetters[i];
+        n = spellFrom(tonic, deg, semi);
+      }
+      n.deg = deg;
+      n.semi = semi;
+      n.degree = degreeText(deg, semi);
+      return n;
+    });
+  }
+
+  var ODD_ROOTS = { 'C♭': 1, 'F♭': 1, 'E♯': 1, 'B♯': 1 };
+
+  /** The 12 key buttons for a scale: [{ pc, note, alt }] where alt is the other usable spelling (or null). */
+  function keyChoices(scaleId) {
+    var sig = signatureScale(getScale(scaleId));
+    var out = [];
+    for (var pc = 0; pc < 12; pc++) {
+      var options = [];
+      for (var letter = 0; letter < 7; letter++) {
+        for (var acc = -1; acc <= 1; acc++) {
+          var n = note(letter, acc);
+          if (n.pc !== pc) continue;
+          var count = 0, doubles = false;
+          scaleNotes(n, sig.id).forEach(function (s) {
+            count += Math.abs(s.acc);
+            if (Math.abs(s.acc) > 1) doubles = true;
+          });
+          if (!doubles) options.push({ note: n, count: count });
+        }
+      }
+      options.sort(function (a, b) {
+        if (a.count !== b.count) return a.count - b.count;
+        var oa = ODD_ROOTS[a.note.name] ? 1 : 0, ob = ODD_ROOTS[b.note.name] ? 1 : 0;
+        if (oa !== ob) return oa - ob;
+        if (a.note.name === 'F♯') return -1;    // F♯ is more common than G♭
+        if (b.note.name === 'F♯') return 1;
+        return a.note.acc - b.note.acc;         // otherwise prefer flats
+      });
+      // Offer the other spelling only if it's a real-world key (no C♭/F♭/E♯/B♯ roots, ≤ 7 accidentals).
+      var alt = options[1] && options[1].count <= 7 && !ODD_ROOTS[options[1].note.name] ? options[1].note : null;
+      out.push({ pc: pc, note: options[0].note, alt: alt });
+    }
+    return out;
+  }
+
+  /** Keep the user's spelling of the tonic if the new scale allows it, else use the usual one. */
+  function respellTonic(tonic, scaleId) {
+    var choice = keyChoices(scaleId)[tonic.pc];
+    if (choice.alt && choice.alt.name === tonic.name) return choice.alt;
+    return choice.note;
+  }
+
+  // ---------- Chords ----------
+
+  // tones: [letter steps, half-steps] above the chord root.
+  var QUALITIES = {
+    maj:    { label: 'major',  suffix: '',        num: '',      minor: false, tones: [[0, 0], [2, 4], [4, 7]] },
+    min:    { label: 'minor',  suffix: 'm',       num: '',      minor: true,  tones: [[0, 0], [2, 3], [4, 7]] },
+    dim:    { label: 'dim',    suffix: '°',       num: '°',     minor: true,  tones: [[0, 0], [2, 3], [4, 6]] },
+    aug:    { label: 'aug',    suffix: '+',       num: '+',     minor: false, tones: [[0, 0], [2, 4], [4, 8]] },
+    sus2:   { label: 'sus2',   suffix: 'sus2',    num: 'sus2',  minor: false, tones: [[0, 0], [1, 2], [4, 7]] },
+    sus4:   { label: 'sus4',   suffix: 'sus4',    num: 'sus4',  minor: false, tones: [[0, 0], [3, 5], [4, 7]] },
+    dom7:   { label: '7',      suffix: '7',       num: '7',     minor: false, tones: [[0, 0], [2, 4], [4, 7], [6, 10]] },
+    maj7:   { label: 'maj7',   suffix: 'maj7',    num: 'maj7',  minor: false, tones: [[0, 0], [2, 4], [4, 7], [6, 11]] },
+    min7:   { label: 'm7',     suffix: 'm7',      num: '7',     minor: true,  tones: [[0, 0], [2, 3], [4, 7], [6, 10]] },
+    m7b5:   { label: 'm7♭5',   suffix: 'm7♭5',    num: 'ø7',    minor: true,  tones: [[0, 0], [2, 3], [4, 6], [6, 10]] },
+    dim7:   { label: 'dim7',   suffix: '°7',      num: '°7',    minor: true,  tones: [[0, 0], [2, 3], [4, 6], [6, 9]] },
+    mMaj7:  { label: 'm(maj7)', suffix: 'm(maj7)', num: '(maj7)', minor: true, tones: [[0, 0], [2, 3], [4, 7], [6, 11]] },
+    maj7s5: { label: 'maj7♯5', suffix: 'maj7♯5',  num: '+maj7', minor: false, tones: [[0, 0], [2, 4], [4, 8], [6, 11]] }
+  };
+  /** Chord types offered in the "Any chord" tab, in order. */
+  var ANY_TYPES = ['maj', 'min', 'dim', 'aug', 'sus2', 'sus4', 'dom7', 'maj7', 'min7', 'm7b5', 'dim7'];
+
+  var TRIAD_BY_SHAPE = { '4,7': 'maj', '3,7': 'min', '3,6': 'dim', '4,8': 'aug' };
+  var SEVENTH_BY_SHAPE = { 'maj,11': 'maj7', 'maj,10': 'dom7', 'min,10': 'min7', 'min,11': 'mMaj7', 'dim,10': 'm7b5', 'dim,9': 'dim7', 'aug,11': 'maj7s5' };
+
+  /** Full chord from a spec, in a key: { deg, semi, quality, root, notes, symbol, numeral }. */
+  function buildChord(tonic, spec) {
+    var q = QUALITIES[spec.quality];
+    var root = spellFrom(tonic, spec.deg, spec.semi);
+    var roman = ROMAN[spec.deg];
+    var prefix = degreeText(spec.deg, spec.semi).replace(/\d+$/, '');
+    return {
+      deg: spec.deg, semi: spec.semi, quality: spec.quality,
+      root: root,
+      notes: q.tones.map(function (t) { return spellFrom(root, t[0], t[1]); }),
+      intervals: q.tones.map(function (t) { return t[1]; }),
+      symbol: root.name + q.suffix,
+      numeral: prefix + (q.minor ? roman.toLowerCase() : roman) + q.num
+    };
+  }
+
+  /** The chord family of a scale. size: 3 (triads) or 4 (7th chords). */
+  function diatonicChords(tonic, scaleId, size) {
+    var steps = chordScale(getScale(scaleId)).steps;
+    return steps.map(function (semi, i) {
+      function up(k) { return mod(steps[(i + k) % 7] - semi, 12); }
+      var triad = TRIAD_BY_SHAPE[up(2) + ',' + up(4)];
+      var quality = size === 4 ? SEVENTH_BY_SHAPE[triad + ',' + up(6)] : triad;
+      return buildChord(tonic, { deg: i, semi: semi, quality: quality });
+    });
+  }
+
+  function sameChord(a, b) { return !!a && !!b && a.semi === b.semi && a.quality === b.quality; }
+
+  var BORROWED = {
+    // Major-flavored keys borrow from the parallel minor (plus II from Lydian).
+    major: [
+      { deg: 3, semi: 5, quality: 'min' },   // iv
+      { deg: 2, semi: 3, quality: 'maj' },   // ♭III
+      { deg: 5, semi: 8, quality: 'maj' },   // ♭VI
+      { deg: 6, semi: 10, quality: 'maj' },  // ♭VII
+      { deg: 1, semi: 2, quality: 'dim' },   // ii°
+      { deg: 4, semi: 7, quality: 'min' },   // v
+      { deg: 1, semi: 2, quality: 'maj' }    // II
+    ],
+    // Minor-flavored keys borrow from Dorian, harmonic minor and the parallel major.
+    minor: [
+      { deg: 3, semi: 5, quality: 'maj' },   // IV
+      { deg: 4, semi: 7, quality: 'maj' },   // V
+      { deg: 4, semi: 7, quality: 'dom7' },  // V7
+      { deg: 0, semi: 0, quality: 'maj' }    // I (Picardy third)
+    ]
+  };
+
+  /** Common borrowed chords, leaving out any that are already in the key. */
+  function borrowedChords(tonic, scaleId) {
+    var inKey = diatonicChords(tonic, scaleId, 3).concat(diatonicChords(tonic, scaleId, 4));
+    return BORROWED[getScale(scaleId).flavor].filter(function (spec) {
+      return !inKey.some(function (c) { return sameChord(c, spec); });
+    }).map(function (spec) { return buildChord(tonic, spec); });
+  }
+
+  /** The 12 roots for "Any chord", spelled for this key: [{ deg, semi, pc, name }], ordered from C. */
+  function anyRoots(tonic, scaleId) {
+    var steps = chordScale(getScale(scaleId)).steps;
+    var out = [];
+    for (var semi = 0; semi < 12; semi++) {
+      var i = steps.indexOf(semi);
+      var deg = i >= 0 ? i : CHROMATIC_DEG[semi];
+      var n = spellFrom(tonic, deg, semi);
+      out.push({ deg: deg, semi: semi, pc: n.pc, name: n.name });
+    }
+    return out.sort(function (a, b) { return a.pc - b.pc; });
+  }
+
+  /** Which Chords tab a chord lives in: { tab: 'key', size } | { tab: 'borrowed' } | { tab: 'any' }. */
+  function findChord(tonic, scaleId, spec) {
+    var match = function (c) { return sameChord(c, spec); };
+    if (diatonicChords(tonic, scaleId, 3).some(match)) return { tab: 'key', size: 3 };
+    if (diatonicChords(tonic, scaleId, 4).some(match)) return { tab: 'key', size: 4 };
+    if (borrowedChords(tonic, scaleId).some(match)) return { tab: 'borrowed' };
+    return { tab: 'any' };
+  }
+
+  /** Degree label ("5", "♭3", "♭6") for any pitch class in a key. */
+  function degreeLabel(tonic, scaleId, pc) {
+    var semi = mod(pc - tonic.pc, 12);
+    var lists = [scaleNotes(tonic, scaleId), scaleNotes(tonic, chordScale(getScale(scaleId)).id)];
+    for (var k = 0; k < lists.length; k++) {
+      for (var i = 0; i < lists[k].length; i++) if (lists[k][i].semi === semi) return lists[k][i].degree;
+    }
+    return degreeText(CHROMATIC_DEG[semi], semi);
+  }
+
+  /** MIDI note numbers for a chord in root position (for sound later). Middle C = 60 = octave 4. */
+  function chordMidi(chord, octave) {
+    var base = 12 * ((octave === undefined ? 4 : octave) + 1) + chord.root.pc;
+    return chord.intervals.map(function (semi) { return base + semi; });
+  }
+
+  SW.theory = {
+    LETTERS: LETTERS, SCALES: SCALES, SCALE_GROUPS: SCALE_GROUPS, QUALITIES: QUALITIES, ANY_TYPES: ANY_TYPES,
+    note: note, parseNote: parseNote, getScale: getScale, chordScale: chordScale,
+    scaleNotes: scaleNotes, keyChoices: keyChoices, respellTonic: respellTonic,
+    buildChord: buildChord, diatonicChords: diatonicChords, borrowedChords: borrowedChords,
+    anyRoots: anyRoots, findChord: findChord, sameChord: sameChord,
+    degreeLabel: degreeLabel, chordMidi: chordMidi
+  };
+})(typeof window !== 'undefined' ? window : globalThis);

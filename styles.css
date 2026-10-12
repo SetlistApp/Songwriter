@@ -1,0 +1,212 @@
+/* Songwriter styles. Every class starts with "sw-" so nothing clashes with the Setlist app.
+   Colors and fonts match the Setlist app. */
+
+.sw-app {
+  --sw-bg: #121214;
+  --sw-surface: #1b1b1e;
+  --sw-raised: #222226;
+  --sw-line: #2c2c30;
+  --sw-text: #f1ede4;
+  --sw-dim: #8f8a83;
+  --sw-gold: #e3a83b;
+  --sw-gold-soft: rgba(227, 168, 59, 0.1);
+  --sw-wood: #1f1b17;
+  --sw-display: 'Oswald', 'Arial Narrow', sans-serif;
+  --sw-body: 'Inter', -apple-system, system-ui, sans-serif;
+  --sw-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  background: var(--sw-bg);
+  color: var(--sw-text);
+  font-family: var(--sw-body);
+  min-height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.sw-app *, .sw-app *::before, .sw-app *::after { box-sizing: border-box; }
+/* Low-priority reset (:where adds no weight), so the sw- classes below always win. */
+:where(.sw-app) button {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+}
+
+/* ---------- Layout ---------- */
+.sw-page { padding: 0 16px 40px; max-width: 1400px; margin: 0 auto; }
+.sw-hdr {
+  position: sticky; top: 0; z-index: 10; background: var(--sw-bg);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 12px 0 10px;
+}
+.sw-logo { font-family: var(--sw-display); font-weight: 600; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; }
+.sw-logo b { color: var(--sw-gold); font-weight: 600; }
+.sw-picks { display: flex; gap: 6px; }
+.sw-pick {
+  background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 9px;
+  min-height: 36px; padding: 4px 10px; display: flex; align-items: center; gap: 6px;
+  font-family: var(--sw-display); font-weight: 600; font-size: 16px;
+}
+.sw-pick span { color: var(--sw-dim); font-size: 10px; }
+.sw-label {
+  font-family: var(--sw-display); font-weight: 600; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--sw-dim); margin: 16px 0 7px; display: flex; justify-content: space-between; align-items: center; min-height: 20px;
+}
+.sw-label button { color: var(--sw-gold); font-family: var(--sw-display); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; font-size: 12px; padding: 4px 0 4px 12px; }
+
+/* ---------- Notes strip ---------- */
+.sw-notes { display: flex; gap: 4px; }
+.sw-note {
+  flex: 1; min-width: 0; text-align: center; background: var(--sw-surface); border: 1px solid var(--sw-line);
+  border-radius: 8px; padding: 4px 0 3px; line-height: 1;
+}
+.sw-note b { display: block; font-family: var(--sw-display); font-weight: 600; font-size: 15px; }
+.sw-note i { font-style: normal; font-family: var(--sw-mono); font-size: 8.5px; color: var(--sw-dim); }
+.sw-note.sw-root { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); }
+.sw-note.sw-root i { color: #5a4316; }
+
+/* ---------- Tabs & toggles ---------- */
+.sw-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.sw-tab {
+  flex: 1; text-align: center; background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px;
+  padding: 9px 4px; font-family: var(--sw-display); font-weight: 600; font-size: 12.5px; letter-spacing: 0.03em; color: var(--sw-dim);
+}
+.sw-tab.sw-on { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); }
+.sw-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sw-seg { display: flex; background: var(--sw-raised); border: 1px solid var(--sw-line); border-radius: 9px; padding: 2px; flex-shrink: 0; }
+.sw-seg button {
+  padding: 6px 12px; border-radius: 7px; font-family: var(--sw-display); font-weight: 600; font-size: 12.5px; letter-spacing: 0.03em; color: var(--sw-dim);
+}
+.sw-seg button.sw-on { background: var(--sw-gold); color: var(--sw-bg); }
+.sw-seg.sw-sm button { padding: 5px 10px; font-size: 11.5px; }
+.sw-hint { font-size: 12.5px; color: var(--sw-dim); }
+.sw-hint.sw-gold { color: var(--sw-gold); }
+.sw-chords-head { margin-bottom: 10px; min-height: 30px; }
+.sw-footnote { font-size: 12px; color: var(--sw-dim); margin-top: 8px; }
+
+/* ---------- Chord cards & progression chips ---------- */
+.sw-chords { position: relative; }
+.sw-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.sw-grid.sw-3col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sw-card, .sw-chip {
+  display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden;
+  background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px;
+  touch-action: manipulation;
+}
+.sw-card { min-height: 40px; padding: 8px 10px; text-align: left; width: 100%; }
+.sw-card b, .sw-chip b { font-family: var(--sw-display); font-weight: 600; font-size: 17px; line-height: 1.15; }
+.sw-card i, .sw-chip i { font-style: normal; font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); }
+.sw-3col .sw-card b { font-size: 16px; }
+.sw-card.sw-sel, .sw-chip.sw-sel { border-color: var(--sw-gold); background: var(--sw-gold-soft); }
+.sw-lift { opacity: 0.3; border-style: dashed !important; }
+
+.sw-prog { display: flex; flex-wrap: wrap; gap: 5px; align-items: stretch; min-height: 40px; }
+.sw-chip { min-height: 38px; padding: 7px 10px; align-items: baseline; }
+.sw-empty {
+  flex: 1; border: 1px dashed var(--sw-line); border-radius: 12px; padding: 14px; text-align: center;
+  color: var(--sw-dim); font-size: 13px; line-height: 1.5;
+}
+.sw-ins { width: 3px; align-self: stretch; background: var(--sw-gold); border-radius: 2px; margin: 0 -1px; }
+
+/* Shown over the Chords section while a progression chip is dragged. */
+.sw-remove {
+  display: none; position: absolute; inset: -6px; z-index: 3;
+  border: 2px dashed var(--sw-dim); border-radius: 14px; background: rgba(18, 18, 20, 0.82);
+  align-items: center; justify-content: center; text-align: center; padding: 10px;
+  font-family: var(--sw-display); font-weight: 600; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.sw-removing .sw-remove { display: flex; }
+.sw-removing.sw-over .sw-remove { border-color: var(--sw-text); background: rgba(18, 18, 20, 0.92); }
+
+.sw-ghost {
+  position: fixed; z-index: 50; pointer-events: none; left: 0; top: 0;
+  display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
+  background: var(--sw-raised); border: 1px solid var(--sw-gold); border-radius: 10px; padding: 8px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+}
+.sw-ghost b { font-family: var(--sw-display); font-weight: 600; font-size: 18px; }
+.sw-ghost i { font-style: normal; font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); }
+.sw-dragging, .sw-dragging * { cursor: grabbing !important; }
+
+/* ---------- Any chord ---------- */
+.sw-sub { font-family: var(--sw-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sw-dim); margin: 10px 0 6px; }
+.sw-sub:first-child { margin-top: 0; }
+.sw-roots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+.sw-roots button {
+  background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 9px; min-height: 36px;
+  font-family: var(--sw-display); font-weight: 600; font-size: 15px;
+}
+.sw-types { display: flex; flex-wrap: wrap; gap: 5px; }
+.sw-types button {
+  background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 9px; min-height: 34px; padding: 5px 11px;
+  font-size: 13px; font-weight: 500;
+}
+.sw-roots button.sw-on, .sw-types button.sw-on { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); font-weight: 600; }
+.sw-result { margin-top: 10px; width: 100%; padding: 10px 12px; border-color: var(--sw-gold); }
+.sw-result b { font-size: 20px; }
+.sw-result span { margin-left: auto; font-size: 11.5px; color: var(--sw-dim); font-family: var(--sw-body); }
+
+/* ---------- Instrument ---------- */
+.sw-panel { background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 12px; padding: 12px; }
+.sw-caption { font-size: 12.5px; color: var(--sw-dim); margin: 10px 0 8px; display: flex; justify-content: space-between; align-items: center; min-height: 24px; }
+.sw-caption b { color: var(--sw-text); font-weight: 600; }
+.sw-caption button { color: var(--sw-gold); font-weight: 500; font-size: 12.5px; padding: 4px 0 4px 10px; }
+.sw-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; border-radius: 8px; }
+.sw-scroll::-webkit-scrollbar { display: none; }
+.sw-scroll svg { display: block; }
+.sw-turn { font-size: 11.5px; color: var(--sw-dim); text-align: center; margin-top: 8px; }
+
+.sw-fb-wood { fill: var(--sw-wood); }
+.sw-fb-inlay { fill: #34302b; }
+.sw-fb-fret { stroke: #4a463f; stroke-width: 2; }
+.sw-fb-nut { stroke: #d8d2c4; stroke-width: 5; }
+.sw-fb-string { stroke: #a9a196; }
+.sw-fb-num, .sw-key-octave { fill: var(--sw-dim); font-family: var(--sw-mono); font-size: 10px; text-anchor: middle; }
+.sw-key-octave { font-size: 9px; }
+.sw-key-white { fill: #ece7dc; stroke: var(--sw-bg); }
+.sw-key-black { fill: #26252a; stroke: var(--sw-bg); }
+.sw-dot-root { fill: var(--sw-gold); }
+.sw-dot-tone { fill: var(--sw-text); }
+.sw-dot-tone.sw-on-white { stroke: var(--sw-bg); stroke-width: 1.5; }
+.sw-dot-txt { fill: var(--sw-bg); font-family: var(--sw-body); font-weight: 600; font-size: 10px; text-anchor: middle; }
+.sw-plain-txt { fill: var(--sw-dim); font-family: var(--sw-body); font-weight: 500; font-size: 10px; text-anchor: middle; }
+.sw-plain-txt.sw-on-white { fill: #8a847a; }
+.sw-plain-bg { fill: var(--sw-wood); }
+.sw-plain-bg-open { fill: var(--sw-bg); }
+
+/* ---------- Bottom sheets (key & scale pickers) ---------- */
+.sw-dimmer { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.6); }
+.sw-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; max-height: 88vh; overflow-y: auto;
+  max-width: 520px; margin: 0 auto;
+  background: var(--sw-raised); border-top: 1px solid var(--sw-line); border-radius: 18px 18px 0 0;
+  padding: 10px 16px calc(24px + env(safe-area-inset-bottom));
+}
+.sw-grab { width: 38px; height: 4px; background: #45434a; border-radius: 2px; margin: 0 auto 14px; }
+.sw-sheet-title {
+  font-family: var(--sw-display); font-weight: 600; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase;
+  margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;
+}
+.sw-sheet-title small { font-family: var(--sw-body); font-weight: 400; font-size: 12px; color: var(--sw-dim); text-transform: none; letter-spacing: 0; }
+.sw-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.sw-keys button {
+  background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px; min-height: 48px;
+  font-family: var(--sw-display); font-weight: 600; font-size: 19px;
+}
+.sw-keys button.sw-on { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); }
+.sw-swap { margin-top: 12px; font-size: 12.5px; color: var(--sw-dim); text-align: center; }
+.sw-swap button { color: var(--sw-gold); font-weight: 500; padding: 6px; }
+.sw-scales { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw-scales button { background: var(--sw-surface); border: 1px solid var(--sw-line); border-radius: 10px; min-height: 42px; padding: 8px 13px; font-size: 14px; font-weight: 500; }
+.sw-scales button.sw-on { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); font-weight: 600; }
+
+/* ---------- Laptop: instrument on the right ---------- */
+.sw-desk .sw-cols { display: grid; grid-template-columns: minmax(380px, 470px) minmax(0, 1fr); gap: 28px; align-items: start; }
+.sw-desk .sw-side { position: sticky; top: 58px; }
+
+/* ---------- Phone turned sideways ---------- */
+.sw-land .sw-page { padding: 8px 16px 12px; }
+.sw-land .sw-hdr { position: static; padding: 0 0 8px; }
+.sw-land .sw-prog { margin-bottom: 10px; min-height: 0; }
+.sw-land .sw-chip { min-height: 34px; padding: 5px 10px; }
+.sw-land .sw-chip b { font-size: 15px; }
+.sw-empty.sw-over { border-color: var(--sw-gold); color: var(--sw-text); }
+.sw-keepcase { text-transform: none; }
