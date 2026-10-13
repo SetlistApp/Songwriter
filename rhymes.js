@@ -116,20 +116,52 @@
   function wordScore(dict, a, b) {
     if (a === b) return 0;
     var i = find(dict, a), j = find(dict, b);
-    return i < 0 || j < 0 ? -1 : tailScore(dict.tails[i], dict.tails[j]);
+    return i < 0 || j < 0 ? -1 : bestScore(dict.tails[i], dict.tails[j]);
   }
   function isVowelToken(t) { return VOWELS.indexOf(t) >= 0 || t === 'UH0'; }
 
   /** Turns the word list text (SW.WORDS) into something fast to search. */
+  /** Entry "word CODE[,ALT…]" ("^word" = not a dictionary word, e.g. a name). tails[i] holds the
+      rhyme part of every way to say the word ("live" = lyve / liv); phones[i] is the usual way. */
   function load(text) {
-    var words = [], phones = [], tails = [], index = Object.create(null);
+    var words = [], phones = [], tails = [], real = [], index = Object.create(null);
     text.split('|').forEach(function (entry, i) {
-      var sp = entry.indexOf(' ');
-      var w = entry.slice(0, sp), ph = decode(entry.slice(sp + 1));
-      words.push(w); phones.push(ph); tails.push(tail(ph));
+      var sp = entry.indexOf(' '), w = entry.slice(0, sp), isName = w[0] === '^';
+      if (isName) w = w.slice(1);
+      var all = entry.slice(sp + 1).split(',').map(decode);
+      words.push(w); phones.push(all[0]); tails.push(all.map(tail)); real.push(!isName);
       index[w] = i;
     });
-    return { words: words, phones: phones, tails: tails, index: index };
+    return { words: words, phones: phones, tails: tails, real: real, index: index };
+  }
+
+  /** The closest score between any way of saying one word and any way of saying the other. */
+  function bestScore(ta, tb) {
+    var best = -1;
+    ta.forEach(function (a) { tb.forEach(function (b) { var s = tailScore(a, b); if (s >= 0 && (best < 0 || s < best)) best = s; }); });
+    return best;
+  }
+
+  // ---------- Ordering rhymes by how usable they are in a lyric ----------
+  // Mostly how common the word is (everyday words first), names and odd words much lower, and a
+  // little for how close it sounds, so a common family rhyme ("lot") can beat an obscure perfect
+  // one ("plop"). The strictness slider still decides which kinds are listed.
+  var CLOSENESS = { 0: 1, 1: 0.75, 1.3: 0.65, 1.4: 0.6, 2: 0.4, 2.3: 0.3 };
+  // Grammar words: the most common words there are, and they sound close to lots of things, but a
+  // lyric line almost never lands on them. ("why", "high", "try" aren't here: those work.)
+  var GRAMMAR_WORDS = {};
+  ('a an the to of in on at by for with from into onto upon is am are was were be been being do does did ' +
+    'has have had i me my mine you your yours he him his she her hers it its we us our ours they them their ' +
+    'theirs this that these those and or but if as so than then which what who whom whose says said can ' +
+    'could would should will shall may might must just ' +
+    'uh um huh hmm mm ah eh er erm uhh umm').split(' ').forEach(function (w) { GRAMMAR_WORDS[w] = true; });   // + filler sounds
+  function usability(dict, j) {
+    var w = dict.words[j], u = 1 - Math.log(j + 1) / Math.log(dict.words.length + 1);   // most common word → 1
+    if (!dict.real[j]) u *= 0.35;                                                       // names, foreign words, abbreviations
+    var base = w.split("'")[0];
+    if (GRAMMAR_WORDS[w]) u *= 0.4;                                                     // is, his, with…
+    else if (w.indexOf("'") >= 0) u *= GRAMMAR_WORDS[base] ? 0.35 : 0.9;                // I've, he's… vs. other contractions
+    return u;
   }
 
   /** Lower case, straight apostrophes, no punctuation around it ("Stop!" → "stop"). */
@@ -161,11 +193,11 @@
   function rhymeType(dict, a, b) {
     var i = find(dict, a), j = find(dict, b);
     if (i < 0 || j < 0) return null;
-    var t = compareTails(dict.tails[i], dict.tails[j]);
+    var s = bestScore(dict.tails[i], dict.tails[j]), t = s < 0 ? -1 : Math.floor(s);
     return t < 0 ? null : TYPES[t];
   }
 
-  /** Rhymes for a word, closest first and then most common first.
+  /** Rhymes for a word, most usable first (see usability; closeness counts a little).
       Returns null if the word isn't in the list; otherwise [{ word, syllables, type }]. */
   function rhymes(dict, word, strictness) {
     var i = find(dict, word);
@@ -173,13 +205,13 @@
     var mine = dict.tails[i], found = [];
     for (var j = 0; j < dict.words.length; j++) {
       if (j === i) continue;
-      var sc = tailScore(mine, dict.tails[j]), t = sc < 0 ? -1 : Math.floor(sc);
+      var sc = bestScore(mine, dict.tails[j]), t = sc < 0 ? -1 : Math.floor(sc);
       if (t < 0 || t > strictness) continue;
       if (sc === 1.4 && dict.words[j].indexOf("'") >= 0) continue;   // "we've" for "me": just the word plus a contraction
       var w = dict.words[j];
-      found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, rank: j });
+      found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, score: 0.65 * usability(dict, j) + 0.35 * CLOSENESS[sc] });
     }
-    found.sort(function (x, y) { return x.t - y.t || x.rank - y.rank; });
+    found.sort(function (x, y) { return y.score - x.score; });
     return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
   }
 

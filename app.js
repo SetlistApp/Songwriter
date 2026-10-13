@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta22';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta23';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -476,7 +476,7 @@
       const groups = Object.keys(bySyl).sort((a, b) => a - b).map((n) =>
         `<div class="sw-sub">${n} syllable${n > 1 ? 's' : ''}</div>${wordButtons(bySyl[n], (r) => `sw-t-${r.type}`)}`).join('');
       const kinds = R.TYPES.slice(0, state.strict + 1);
-      const key = kinds.length > 1 ? `<div class="sw-wkey">${kinds.map((k) => `<span><i class="sw-t-${k}"></i>${k}</span>`).join('')}<span>closest first</span></div>` : '';
+      const key = kinds.length > 1 ? `<div class="sw-wkey">${kinds.map((k) => `<span><i class="sw-t-${k}"></i>${k}</span>`).join('')}<span>most usable first</span></div>` : '';
       return help + groups + more + key;
     }
 
