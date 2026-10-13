@@ -165,7 +165,7 @@
     check('time / line: family (M and N hum)', R.rhymeType(D, 'time', 'line'), 'family');
     check('stop / mob: vowel', R.rhymeType(D, 'stop', 'mob'), 'vowel');
     check('stop / step: no rhyme (Loose was removed)', R.rhymeType(D, 'stop', 'step'), null);
-    check('row / road: vowel (one extra sound at the end)', R.rhymeType(D, 'row', 'road'), 'vowel');
+    check('row / road: family (open vowel + a soft sound)', R.rhymeType(D, 'row', 'road'), 'family');
     check('stop / tree: no rhyme', R.rhymeType(D, 'stop', 'tree'), null);
     check('lot / thought: AA and AO count as one vowel beyond Perfect', R.rhymeType(D, 'lot', 'thought'), 'family');
     check('golden / holding: family (quiet vowels match, N and NG hum)', R.rhymeType(D, 'golden', 'holding'), 'family');
@@ -238,6 +238,10 @@
     check('Lines: blank lines are skipped in the scheme', R.rhymeScheme(D, ['the night', '', 'so bright']).scheme, 'AA');
     check('Lines: same last word counts as a rhyme', R.rhymeScheme(D, ['I love you', 'I need you']).scheme, 'AA');
     check('Close vowels: thing / mean, sing / seen, good / food are near (family) rhymes', [R.rhymeType(D, 'thing', 'mean'), R.rhymeType(D, 'sing', 'seen'), R.rhymeType(D, 'good', 'food')], ['family', 'family', 'family']);
+    check('Open endings + a soft sound are family: day / rain, me / seen, go / home', [R.rhymeType(D, 'day', 'rain'), R.rhymeType(D, 'me', 'seen'), R.rhymeType(D, 'go', 'home')], ['family', 'family', 'family']);
+    check('…but a hard sound stays a vowel rhyme (day / date)', R.rhymeType(D, 'day', 'date'), 'vowel');
+    check('…with the exact vowel only: me / in is not family (close vowel + added sound is too loose)', R.rhymeType(D, 'me', 'in') === 'family', false);
+    check('Family list for "me" now has words (seen, need)', ['seen', 'need'].every(function (w) { return R.rhymes(D, 'me', 1).some(function (r) { return r.word === w && r.type === 'family'; }); }), true);
     check('Close vowels: Perfect stays exact (thing / sing perfect, thing / mean not)', [R.rhymeType(D, 'thing', 'sing'), R.rhymes(D, 'thing', 0).some(function (r) { return r.word === 'mean'; })], ['perfect', false]);
     var ks = R.rhymeScheme(D, ['my heart', 'a star', 'one thing', 'so mean']);
     check('Lines: vowel rhymes get a letter too (heart / star dotted, thing / mean dashed)', [ks.scheme, ks.lines[1].kind, ks.lines[3].kind], ['AABB', 'vowel', 'family']);

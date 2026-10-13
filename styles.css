@@ -538,3 +538,6 @@
 .sw-nocounts .sw-lg, .sw-nocounts .sw-gutter, .sw-nocounts .sw-scheme { display: none; }
 .sw-nocounts .sw-u { text-decoration: none; }
 .sw-nocounts .sw-ta, .sw-nocounts .sw-mirror { width: 100%; }
+
+.sw-notsaved { font-size: 12.5px; line-height: 1.45; color: var(--sw-dim); border-left: 2px solid var(--sw-orange, #d9704a); padding: 4px 0 4px 10px; margin: 0 0 12px; }
+.sw-notsaved b { color: var(--sw-text); font-weight: 500; }

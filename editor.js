@@ -18,8 +18,8 @@
   var SAVE_AFTER_MS = 800;      // save a section this long after you stop typing
   var RETRY_MS = 5000;          // try a failed save again after this long
   var UNDO_MS = 10000;          // how long "Undo" stays after deleting
-  // Saving waits for the Setlist merge (lyrics will belong to Setlist songs). Until then the songs
-  // list only appears in practice mode (#practice at the end of the address).
+  // Saving waits for the Setlist merge (lyrics will belong to Setlist songs). Until then songs use the
+  // practice store: kept in this browser tab only (they survive reloads and updates, not closing the tab).
   var SAVING_READY = false;
 
   function create(ctx) {
@@ -40,7 +40,7 @@
     // ---------- Connecting ----------
     function connect() {
       if (store || storeProblem === 'connecting') return;
-      if (/practice/.test(root.location.hash)) { store = SW.songs.practiceStore(); return; }
+      if (!SAVING_READY || /practice/.test(root.location.hash)) { store = SW.songs.practiceStore(); return; }
       storeProblem = 'connecting';
       SW.songs.open(function (s) { store = s; storeProblem = null; ctx.render(); }, function (why) { storeProblem = why; ctx.render(); });
     }
@@ -93,9 +93,6 @@
     }
 
     function listPage() {
-      if (!SAVING_READY && !/practice/.test(root.location.hash)) {
-        return `${ctx.findBox()}<div class="sw-soon"><b>Song editor:</b> coming with the Setlist merge, where each song's lyrics get sections, rhyme letters and syllable counts. Try it now (nothing is saved) by adding <b>#practice</b> to the address.</div>`;
-      }
       connect();
       if (store && !list && !listLoading && !storeProblem) loadList();
       var body;
@@ -117,7 +114,8 @@
           </button>`;
         }).join('');
       }
-      var practice = store && store.kind === 'practice' ? '<div class="sw-whelp"><b>Practice mode:</b> nothing is saved.</div>' : '';
+      var practice = store && store.kind === 'practice'
+        ? '<div class="sw-notsaved"><b>Not saved yet.</b> Songs stay while this tab is open (even through updates), but close the tab and they’re gone. Use ⋯ → <b>Copy lyrics</b> in a song to keep a copy. Saving comes with the Setlist merge.</div>' : '';
       return `${ctx.findBox()}
         <div class="sw-label">Songs ${store && !storeProblem ? '<button data-act="ed-new">+ New song</button>' : ''}</div>
         ${practice}${body}${undoBar()}`;
@@ -244,7 +242,7 @@
     }
 
     function undoBar() {
-      return undo ? `<div class="sw-toast">${esc(undo.text)} <button data-act="ed-undo">Undo</button></div>` : '';
+      return undo ? `<div class="sw-toast">${esc(undo.text)}${undo.run ? ' <button data-act="ed-undo">Undo</button>' : ''}</div>` : '';
     }
 
     // ---------- Pop-ups ----------
@@ -254,6 +252,7 @@
       else if (state.sheet === 'ed-add') body = tagPicker('ed-addtag', null, 'Add a section');
       else if (state.sheet === 'ed-link') body = letterMenu();
       else if (state.sheet === 'ed-songmenu') body = `<div class="sw-sheet-title">${esc(song ? song.title || 'Untitled' : '')}<button data-act="close-sheet">Done</button></div>
+        <button class="sw-mitem" data-act="ed-copy">Copy lyrics <span>to paste anywhere</span></button>
         <button class="sw-mitem sw-red" data-act="ed-delsong">Delete song <span>Undo for 10 s</span></button>`;
       if (!body) return '';
       return `<div class="sw-dimmer" data-act="close-sheet"></div>
@@ -622,6 +621,19 @@
           change(store.setSongDeleted(s.id, true).then(function () { list = null; }));
           showUndo(`“${s.title || 'Untitled'}” deleted`, function () { change(store.setSongDeleted(s.id, false).then(function () { list = null; })); });
           return true;
+        }
+        case 'ed-copy': {
+          // The whole song as plain text: title, then each section's name and words.
+          var o2 = order(), lab2 = labels(o2, secs);
+          var text = [song.title || 'Untitled'].concat(o2.map(function (id) {
+            var s = secs[id];
+            return s.repeat_of ? '[' + (lab2[s.repeat_of] || 'Repeat') + ']' : '[' + lab2[id] + ']\n' + (s.body || '').trim();
+          })).join('\n\n');
+          state.sheet = null;
+          var done = function (ok) { showUndo(ok ? 'Lyrics copied' : 'Couldn’t copy on this device', null); ctx.render(); };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+          else done(false);
+          break;
         }
         case 'ed-undo':
           if (undo) { clearTimeout(undo.timer); var run = undo.run; undo = null; run(); }

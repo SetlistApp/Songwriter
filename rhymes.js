@@ -9,6 +9,7 @@
    stop → AA P, golden → OW L D AH N. Two words rhyme by comparing tails:
      perfect  the tails are the same                         stop / top
      family   same vowels; each consonant is a close cousin  stop / lot (P and T are both "stop" sounds)
+              or an open vowel plus one soft sound            day / rain, me / seen, go / home
      vowel    just the vowels match                          stop / mob
    (One side adding a sound at the end, star / start, lands under vowel.)
    Strictness 0-2 (Perfect, Family, Vowel) lists that kind and every closer kind.
@@ -80,10 +81,22 @@
   var nearVowel = function (v) { return CLOSE[v] || v; };
   var sameFamily = function (a, b) { return a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]); };
 
-  /** How two tails rhyme: 0 perfect, 1 family, 2 vowel, or -1 not at all. */
-  function compareTails(a, b) {
+  // Soft (voiced) sounds that can be added after an open vowel and still feel like a family rhyme:
+  // day / rain, me / seen, go / home. (day / date, with a hard T, stays a vowel rhyme.)
+  var SOFT_ADD = { M: 1, N: 1, NG: 1, D: 1, B: 1, G: 1, L: 1, Z: 1, V: 1 };
+
+  /** How closely two tails rhyme, as a score: 0 perfect; 1 family (same vowel, cousin sounds),
+      1.3 family with close vowels (thing / mean), 1.4 family by an added soft sound (day / rain);
+      2 vowel, 2.3 vowel with close vowels; -1 not at all. Whole number = the kind (see compareTails);
+      the fraction only decides which of two family rhymes is closer. */
+  function tailScore(a, b) {
     var i;
     if (a.join() === b.join()) return 0;
+    var exactVowels = a.filter(isVowelToken).join() === b.filter(isVowelToken).join();
+    // Open ending vs. the same thing plus one soft sound (day / rain, me / seen): family. Same vowel only.
+    var longer = a.length > b.length ? a : b, shorter = longer === a ? b : a;
+    if (longer.length === shorter.length + 1 && isVowelToken(shorter[shorter.length - 1]) && SOFT_ADD[longer[longer.length - 1]] &&
+        longer.slice(0, -1).join() === shorter.join()) return 1.4;
     var va = a.filter(isVowelToken).map(nearVowel), vb = b.filter(isVowelToken).map(nearVowel);
     var sameVowels = va.join() === vb.join();
     if (sameVowels && a.length === b.length) {
@@ -91,10 +104,19 @@
         if (isVowelToken(a[i]) !== isVowelToken(b[i])) break;
         if (isVowelToken(a[i]) ? nearVowel(a[i]) !== nearVowel(b[i]) : !sameFamily(a[i], b[i])) break;
       }
-      if (i === a.length) return 1;
+      if (i === a.length) return exactVowels ? 1 : 1.3;
     }
-    if (sameVowels) return 2;
+    if (sameVowels) return exactVowels ? 2 : 2.3;
     return -1;
+  }
+  /** How two tails rhyme: 0 perfect, 1 family, 2 vowel, or -1 not at all. */
+  function compareTails(a, b) { var s = tailScore(a, b); return s < 0 ? -1 : Math.floor(s); }
+
+  /** Closeness score of two words (see tailScore); the same word scores 0; unknown words -1. */
+  function wordScore(dict, a, b) {
+    if (a === b) return 0;
+    var i = find(dict, a), j = find(dict, b);
+    return i < 0 || j < 0 ? -1 : tailScore(dict.tails[i], dict.tails[j]);
   }
   function isVowelToken(t) { return VOWELS.indexOf(t) >= 0 || t === 'UH0'; }
 
@@ -151,8 +173,9 @@
     var mine = dict.tails[i], found = [];
     for (var j = 0; j < dict.words.length; j++) {
       if (j === i) continue;
-      var t = compareTails(mine, dict.tails[j]);
+      var sc = tailScore(mine, dict.tails[j]), t = sc < 0 ? -1 : Math.floor(sc);
       if (t < 0 || t > strictness) continue;
+      if (sc === 1.4 && dict.words[j].indexOf("'") >= 0) continue;   // "we've" for "me": just the word plus a contraction
       var w = dict.words[j];
       found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, rank: j });
     }
@@ -240,10 +263,10 @@
     /** How lines i and j rhyme: { kind, phrase } (phrase = it's the multi-syllable endings that match). */
     var match = function (i, j) {
       var a = info[i], b = info[j];
-      var w = lineRhyme(dict, a.end, b.end), best = w ? { kind: w, phrase: false } : null;
+      var ws = wordScore(dict, a.end, b.end), best = ws >= 0 ? { score: ws, kind: TYPES[Math.floor(ws)], phrase: false } : null;
       if (a.phrase && b.phrase && (a.phrase.multi || b.phrase.multi)) {
-        var lv = compareTails(a.phrase.tail, b.phrase.tail);
-        if (lv >= 0 && lv <= 2 && (!best || lv <= LEVEL[best.kind])) best = { kind: TYPES[lv], phrase: true };
+        var ps = tailScore(a.phrase.tail, b.phrase.tail);
+        if (ps >= 0 && (!best || ps <= best.score)) best = { score: ps, kind: TYPES[Math.floor(ps)], phrase: true };
       }
       return best;
     };
@@ -264,7 +287,7 @@
         if (j === i || !y.end || pickOf(j) === '-') return;
         var m = match(i, j);
         if (!m) return;
-        if (!best || LEVEL[m.kind] < LEVEL[best.kind]) { best = m; partners = [j]; } else if (m.kind === best.kind) partners.push(j);
+        if (!best || m.score < best.score) { best = m; partners = [j]; } else if (m.score === best.score) partners.push(j);
       });
       if (!best) return;
       x.kind = best.kind;
@@ -508,7 +531,7 @@
 
   SW.rhymes = {
     CODE: CODE, SYMBOLS: SYMBOLS, TYPES: TYPES, STRICTNESS: STRICTNESS, FAMILY: FAMILY,
-    encode: encode, decode: decode, tail: tail, compareTails: compareTails,
+    encode: encode, decode: decode, tail: tail, compareTails: compareTails, tailScore: tailScore,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
     lineWords: lineWords, wordSpans: wordSpans, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,

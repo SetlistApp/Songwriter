@@ -102,12 +102,22 @@
     };
   }
 
-  /** Same methods, kept in memory only (for testing the screen without the database). */
+  /** Same methods, without the database. Songs are kept in this browser tab's session storage, so
+      they survive a reload or an automatic update, but not closing the tab. (Until saving is connected.) */
+  var DRAFTS_KEY = 'songwriter_draftSongs';
   function practiceStore() {
     var songs = [], sections = [], n = 0;
+    try {
+      var kept = JSON.parse(root.sessionStorage.getItem(DRAFTS_KEY));
+      if (kept && kept.songs) { songs = kept.songs; sections = kept.sections; n = kept.n || 0; }
+    } catch (e) { /* nothing kept, or private mode */ }
+    var keep = function () {
+      try { root.sessionStorage.setItem(DRAFTS_KEY, JSON.stringify({ songs: songs, sections: sections, n: n })); } catch (e) { /* full or private: fine */ }
+    };
     var id = function () { return 'p' + (++n); };
     var copy = function (x) { return JSON.parse(JSON.stringify(x)); };
-    var later = function (v) { return new Promise(function (ok) { setTimeout(function () { ok(copy(v)); }, 60); }); };
+    // Every method answers through later(), after its change is made: a good moment to keep everything.
+    var later = function (v) { keep(); return new Promise(function (ok) { setTimeout(function () { ok(copy(v)); }, 60); }); };
     var song = function (sid) { return songs.filter(function (s) { return s.id === sid; })[0]; };
     var sec = function (xid) { return sections.filter(function (s) { return s.id === xid; })[0]; };
     var live = function (sid) { return sections.filter(function (s) { return s.song_id === sid && !s.deleted_at; }); };
