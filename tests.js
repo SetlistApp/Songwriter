@@ -1,4 +1,4 @@
-/* Songwriter: checks that theory.js gives the right answers.
+/* Songwriter: checks that theory.js and rhymes.js give the right answers.
    Open tests.html to see the results (or run: node tests.js). */
 (function (root) {
   var SW = root.SW = root.SW || {};
@@ -153,12 +153,46 @@
     check('Open voicings are allowed (C4 G4 E5)', T.chordVoicings(T.buildChord(C, CGAmF[0]), three).some(function (v) { return v.join() === '60,67,76'; }), true);
     check('Ties go to close voicings: smoothest C G Am F is all close', T.smoothestVoicing(C, CGAmF, three).every(function (v) { return v[v.length - 1] - v[0] <= 12; }), true);
 
+    // --- Rhymes and syllables (rhymes.js + words.js) ---
+    var R = SW.rhymes, D = R.load(SW.WORDS);
+    var words = function (list) { return list.map(function (r) { return r.word; }); };
+    check('Sound code round-trips', R.decode(R.encode(['S', 'T', 'AA1', 'P'])), ['S', 'T', 'AA1', 'P']);
+    check('Every sound has its own code letter', R.CODE.length === R.SYMBOLS.length && new Set(R.CODE).size === R.CODE.length, true);
+    check('Word list has 35,000 words, most common first', [D.words.length, D.words[0]], [35000, 'you']);
+    check('Rhyme part starts at the loud vowel (golden → OW L D uh N)', R.tail(['G', 'OW1', 'L', 'D', 'AH0', 'N']), ['OW', 'L', 'D', 'UH0', 'N']);
+    check('stop / top: perfect', R.rhymeType(D, 'stop', 'top'), 'perfect');
+    check('stop / lot: family (P and T are both stop sounds)', R.rhymeType(D, 'stop', 'lot'), 'family');
+    check('time / line: family (M and N hum)', R.rhymeType(D, 'time', 'line'), 'family');
+    check('stop / mob: vowel', R.rhymeType(D, 'stop', 'mob'), 'vowel');
+    check('stop / step: loose (same ending, other vowel)', R.rhymeType(D, 'stop', 'step'), 'loose');
+    check('row / road: vowel (one extra sound at the end)', R.rhymeType(D, 'row', 'road'), 'vowel');
+    check('stop / tree: no rhyme', R.rhymeType(D, 'stop', 'tree'), null);
+    check('lot / thought: AA and AO count as one vowel beyond Perfect', R.rhymeType(D, 'lot', 'thought'), 'family');
+    check('golden / holding: family (quiet vowels match, N and NG hum)', R.rhymeType(D, 'golden', 'holding'), 'family');
+    var perfect = R.rhymes(D, 'stop', 0), family = R.rhymes(D, 'stop', 1), loose = R.rhymes(D, 'stop', 3);
+    check('Perfect rhymes for stop start with top, drop', words(perfect).slice(0, 2), ['top', 'drop']);
+    check('Perfect only lists perfect rhymes', perfect.every(function (r) { return r.type === 'perfect'; }), true);
+    check('Family adds lot, keeps perfect ones first', words(family).indexOf('lot') > words(family).indexOf('top') && family[0].type === 'perfect', true);
+    check('Each step only adds rhymes', perfect.length < family.length && family.length < loose.length, true);
+    check('Results are closest first', loose.every(function (r, i) { return !i || R.TYPES.indexOf(loose[i - 1].type) <= R.TYPES.indexOf(r.type); }), true);
+    check('The word itself is left out', words(loose).indexOf('stop') < 0, true);
+    check('Results know their syllables (nonstop = 2)', perfect.filter(function (r) { return r.word === 'nonstop'; })[0].syllables, 2);
+    check('Unknown word: no rhymes (null)', R.rhymes(D, 'skrrtzz', 3), null);
+    check('Lookups ignore case and punctuation ("Stop!")', R.rhymeType(D, 'Stop!', '“top,”'), 'perfect');
+    check('Curly apostrophes work (couldn’t)', R.find(D, 'couldn’t') >= 0, true);
+    check('Contractions are in the list', ['don\'t', 'i\'m', 'you\'re', 'it\'s', 'ain\'t'].every(function (w) { return R.find(D, w) >= 0; }), true);
+    check("runnin' is looked up as running", R.syllables(D, "runnin'"), 2);
+    check('Syllables from the list', ['every', 'orange', 'golden', 'a'].map(function (w) { return R.syllables(D, w); }), [3, 2, 2, 1]);
+    check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
+
     return results;
   };
 
   // Running in Node from the command line: print a summary.
   if (typeof module !== 'undefined' && typeof window === 'undefined') {
     require('./theory.js');
+    require('./words.js');
+    require('./rhymes.js');
     var results = SW.runTests(), failed = results.filter(function (r) { return !r.ok; });
     failed.forEach(function (r) { console.log('FAIL  ' + r.name + '\n      got:  ' + JSON.stringify(r.got) + '\n      want: ' + JSON.stringify(r.want)); });
     console.log((results.length - failed.length) + ' passed, ' + failed.length + ' failed');

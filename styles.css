@@ -35,7 +35,7 @@
 .sw-hdr {
   position: sticky; top: 0; z-index: 10; background: var(--sw-bg);
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
-  padding: 12px 0 10px;
+  padding: 12px 0 10px; min-height: 58px;   /* same height with or without the key picker */
 }
 .sw-logo { font-family: var(--sw-display); font-weight: 600; font-size: 18px; letter-spacing: 0.06em; text-transform: uppercase; }
 .sw-logo b { color: var(--sw-gold); font-weight: 600; }
@@ -225,9 +225,77 @@
 .sw-empty.sw-over { border-color: var(--sw-gold); color: var(--sw-text); }
 .sw-keepcase { text-transform: none; }
 
-/* ---------- Page tabs (Progression | Voice leading) ---------- */
-.sw-pagetabs { margin-bottom: 10px; }
-.sw-pagetabs .sw-tab { padding: 7px 4px; font-size: 13px; }
+/* ---------- Big tabs (Chords | Lyrics) and the Chords switch (Progression | Voice leading) ---------- */
+.sw-areatabs { margin-bottom: 8px; }
+.sw-areatabs .sw-tab { padding: 10px 4px; font-size: 15px; }
+.sw-seg.sw-wide { width: 100%; margin-bottom: 12px; }
+.sw-seg.sw-wide button { flex: 1; padding: 7px 6px; font-size: 13px; }
+
+/* ---------- Lyrics: Find rhymes ---------- */
+.sw-find { display: flex; gap: 6px; }
+.sw-input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px;
+  background: var(--sw-surface); border: 1px solid var(--sw-line); color: var(--sw-text);
+  font: 16px var(--sw-body);   /* 16px or more, or iPhones zoom in when you tap it */
+  -webkit-user-select: text; user-select: text; -webkit-appearance: none; appearance: none; outline: none;
+}
+.sw-input:focus { border-color: var(--sw-gold); }
+.sw-input::placeholder { color: var(--sw-dim); }
+.sw-findbtn {
+  min-height: 44px; padding: 0 18px; border-radius: 10px; background: var(--sw-gold); color: var(--sw-bg);
+  font-family: var(--sw-display); font-weight: 600; font-size: 15px; letter-spacing: 0.03em;
+}
+.sw-lyrics .sw-sub { margin-top: 18px; }
+.sw-soon { margin-top: 22px; border: 1px dashed var(--sw-line); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.45; color: var(--sw-dim); }
+.sw-soon b { color: var(--sw-text); font-weight: 500; }
+
+/* Word buttons (recent lookups and results) */
+.sw-words { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw-wd {
+  min-height: 36px; padding: 6px 12px; border-radius: 9px; font-size: 15px;
+  background: var(--sw-surface); border: 1px solid var(--sw-line); color: var(--sw-text);
+}
+.sw-wd.sw-t-perfect { border-color: rgba(227, 168, 59, 0.6); }
+.sw-wd.sw-t-family { border-style: dashed; border-color: #5d5a62; }
+.sw-wd.sw-t-loose { color: var(--sw-dim); }
+
+/* ---------- Word sheet ---------- */
+.sw-wsheet { height: 82vh; }   /* same height on every tab, so buttons don't jump around */
+.sw-wback { color: var(--sw-gold); font-size: 13px; padding: 2px 0 6px; }
+.sw-whead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.sw-whead b { font-family: var(--sw-display); font-weight: 600; font-size: 28px; line-height: 1.1; overflow-wrap: anywhere; }
+.sw-whead span { font-family: var(--sw-mono); font-size: 11px; color: var(--sw-dim); white-space: nowrap; }
+.sw-x { margin-left: auto; align-self: center; width: 36px; height: 36px; font-size: 18px; color: var(--sw-dim); }
+.sw-wsheet .sw-seg.sw-wide { margin-bottom: 4px; }
+.sw-strict { margin-bottom: 4px; }
+/* The Strictness slider: a native range input (works with a thumb drag), styled to match. */
+.sw-range {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 2px 0 0; background: transparent; touch-action: none;
+}
+.sw-range::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--sw-gold) var(--p), var(--sw-line) var(--p));
+}
+.sw-range::-moz-range-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--sw-gold) var(--p), var(--sw-line) var(--p)); }
+.sw-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 26px; margin-top: -11px; border-radius: 50%;
+  background: var(--sw-text); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.sw-range::-moz-range-thumb { width: 26px; height: 26px; border: 0; border-radius: 50%; background: var(--sw-text); }
+.sw-stops { display: flex; justify-content: space-between; margin: 0 -4px; }
+.sw-stops button {
+  min-height: 34px; padding: 4px; font-family: var(--sw-display); font-weight: 600; font-size: 13px; letter-spacing: 0.03em; color: var(--sw-dim);
+}
+.sw-stops button.sw-on { color: var(--sw-gold); }
+.sw-whelp { font-size: 12.5px; line-height: 1.45; color: var(--sw-dim); margin: 6px 0 2px; }
+.sw-whelp b { color: var(--sw-text); font-weight: 500; }
+.sw-wempty { font-size: 13.5px; line-height: 1.5; color: var(--sw-dim); padding: 18px 2px; }
+.sw-link { color: var(--sw-gold); font-weight: 500; padding: 4px; }
+.sw-wkey { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); }
+.sw-wkey i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--sw-line); background: var(--sw-surface); }
+.sw-wkey i.sw-t-perfect { border-color: rgba(227, 168, 59, 0.6); }
+.sw-wkey i.sw-t-family { border-style: dashed; border-color: #5d5a62; }
+.sw-wkey i.sw-t-loose { opacity: 0.5; }
+.sw-wnote { margin-top: 16px; font-size: 11.5px; color: var(--sw-dim); }
 
 /* ---------- Voice leading ---------- */
 .sw-vlbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }

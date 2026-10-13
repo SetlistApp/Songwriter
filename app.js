@@ -1,5 +1,6 @@
 /* Songwriter: the screen. Holds the state (what's picked), draws the page from it, and
-   handles taps and drag-and-drop. Music rules come from SW.theory, drawings from SW.instruments.
+   handles taps and drag-and-drop. Music rules come from SW.theory, rhymes from SW.rhymes,
+   drawings from SW.instruments.
 
    Use: SW.app.mount(someElement). Everything is drawn inside that element, so it can be
    dropped into the Setlist app later. */
@@ -7,12 +8,21 @@
   const SW = root.SW = root.SW || {};
   const T = SW.theory;
   const INST = SW.instruments;
+  const R = SW.rhymes;
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta3';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta4';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
+  const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
+  const DATAMUSE = 'https://api.datamuse.com/words';   // synonyms & antonyms (needs internet)
+  const STRICT_HELP = [
+    'Same vowel and same ending sound.',
+    'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
+    'Just the vowel sounds match.',
+    'Also the same ending sounds with a different vowel.'
+  ];
 
   function mount(el) {
     const state = {
@@ -27,8 +37,16 @@
       shown: null,           // chord spec shown on the instrument (null = show the scale)
       selChip: -1,           // selected progression chip (tap a chord card to swap it)
       progression: [],       // chord specs, stored relative to the key
-      sheet: null,           // 'key' | 'scale' | null
-      page: 'progression',   // top tabs: 'progression' | 'voicing'
+      sheet: null,           // 'pick' (key & scale) | 'word' | null
+      area: 'chords',        // big top tabs: 'chords' | 'lyrics'
+      page: 'progression',   // Chords switch: 'progression' | 'voicing'
+      // Lyrics
+      lyQuery: '',           // what's typed in the Find rhymes box
+      lyRecent: [],          // words looked up this visit, newest first
+      word: null,            // word shown in the word sheet
+      wordTrail: [],         // words looked up before it from inside the sheet (for ‹ Back)
+      wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant'
+      strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel, 3 Loose
       // Voice leading
       vlNotes: 3,            // 3 or 4 notes per chord
       vlInv: true,           // allow inversions
@@ -46,6 +64,9 @@
     let drag = null;
     let suppressClick = false;
     let lastInstrument = null;
+    let dict = null;          // the searchable word list, once words.js has loaded
+    let dictState = 'idle';   // 'idle' | 'loading' | 'ready' | 'failed'
+    const dmCache = {};       // Datamuse answers: { 'syn:stop': { status, words } }
 
     // ---------- Small helpers ----------
     const layout = () => (landMq.matches ? 'land' : deskMq.matches ? 'desk' : 'phone');
@@ -205,6 +226,7 @@
 
     /** The Key & scale pop-up. Changes show right away behind it; Done or tapping outside closes it. */
     function sheet() {
+      if (state.sheet === 'word') return wordSheet();
       if (!state.sheet) return '';
       const choices = T.keyChoices(state.scaleId);
       const cur = choices[state.tonic.pc];
@@ -322,9 +344,127 @@
       </div>`;
     }
 
+    /** Big tabs (Chords | Lyrics); on Chords, the smaller Progression | Voice leading switch below. */
     function pageTabs() {
-      return `<div class="sw-tabs sw-pagetabs">${[['progression', 'Progression'], ['voicing', 'Voice leading']].map(([v, label]) =>
-        `<button class="sw-tab ${state.page === v ? 'sw-on' : ''}" data-act="page" data-arg="${v}">${label}</button>`).join('')}</div>`;
+      const area = `<div class="sw-tabs sw-areatabs">${[['chords', 'Chords'], ['lyrics', 'Lyrics']].map(([v, label]) =>
+        `<button class="sw-tab ${state.area === v ? 'sw-on' : ''}" data-act="area" data-arg="${v}">${label}</button>`).join('')}</div>`;
+      if (state.area !== 'chords') return area;
+      return area + seg('page', [['progression', 'Progression'], ['voicing', 'Voice leading']], state.page, 'sw-wide');
+    }
+
+    const header = () => `<header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${state.area === 'chords' ? picker() : ''}</header>`;
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---------- Lyrics page ----------
+    /** Loads the word list the first time it's needed (it's big, so Chords never waits for it). */
+    function needWords() {
+      if (dictState !== 'idle') return;
+      if (SW.WORDS) { dict = R.load(SW.WORDS); dictState = 'ready'; return; }
+      dictState = 'loading';
+      const s = document.createElement('script');
+      s.src = WORDS_URL;
+      s.onload = () => { dict = R.load(SW.WORDS); dictState = 'ready'; render(); };
+      s.onerror = () => { dictState = 'idle'; s.remove(); render(); };   // try again next time
+      document.head.appendChild(s);
+    }
+
+    function lyricsPage() {
+      needWords();
+      const recent = state.lyRecent.length
+        ? `<div class="sw-sub">Recent</div><div class="sw-words">${state.lyRecent.map((w) =>
+          `<button class="sw-wd" data-act="lookup" data-arg="${esc(w)}">${esc(w)}</button>`).join('')}</div>` : '';
+      return `<div class="sw-label">Find rhymes</div>
+        <form class="sw-find" data-find>
+          <input class="sw-input" name="q" type="search" value="${esc(state.lyQuery)}" placeholder="Type a word" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+          <button class="sw-findbtn" type="submit">Find</button>
+        </form>
+        <div class="sw-footnote">Rhymes, near rhymes, synonyms and antonyms. Rhymes work offline.</div>
+        ${recent}
+        <div class="sw-soon"><b>Coming next:</b> write songs here, with syllable counts and rhyme colors, saved online and shared between you two.</div>`;
+    }
+
+    function lookup(word, fromSheet) {
+      const w = R.clean(word);
+      if (!w) return;
+      if (fromSheet && state.word && state.word !== w) state.wordTrail.push(state.word);
+      if (!fromSheet) { state.wordTrail = []; state.wordTab = 'rhymes'; }   // a new search starts on Rhymes
+      state.word = w;
+      state.sheet = 'word';
+      state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
+      needWords();
+      if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, w);
+    }
+
+    /** Synonyms / antonyms / "means like" from Datamuse. Redraws when the answer arrives. */
+    function fetchWords(kind, word) {
+      const key = `${kind}:${word}`;
+      if (dmCache[key] && dmCache[key].status !== 'error') return;
+      dmCache[key] = { status: 'loading', words: [] };
+      const q = (rel) => fetch(`${DATAMUSE}?${rel}=${encodeURIComponent(word)}&max=40`)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((list) => list.map((x) => x.word).filter((x) => /^[a-z' -]+$/.test(x) && x !== word));
+      const asks = kind === 'syn' ? [q('rel_syn'), q('ml')] : [q('rel_ant')];
+      Promise.all(asks).then(([main, more]) => {
+        dmCache[key] = { status: 'ok', words: main, more: (more || []).filter((x) => !main.includes(x)).slice(0, 24) };
+      }).catch(() => { dmCache[key] = { status: 'error', words: [] }; })
+        .then(() => { if (state.sheet === 'word' && state.word === word && state.wordTab === kind) render(); });
+    }
+
+    const wordButtons = (list, cls = () => '') => `<div class="sw-words">${list.map((w) =>
+      `<button class="sw-wd ${cls(w)}" data-act="word-pick" data-arg="${esc(w.word || w)}">${esc(w.word || w)}</button>`).join('')}</div>`;
+
+    /** The rhyme list for the current strictness: help line, then results grouped by syllables. */
+    function rhymeBody() {
+      const list = R.rhymes(dict, state.word, state.strict);
+      const help = `<div class="sw-whelp"><b>${R.STRICTNESS[state.strict]}:</b> ${STRICT_HELP[state.strict]}</div>`;
+      if (!list.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
+      const bySyl = {};
+      list.forEach((r) => { (bySyl[r.syllables] = bySyl[r.syllables] || []).push(r); });
+      const groups = Object.keys(bySyl).sort((a, b) => a - b).map((n) =>
+        `<div class="sw-sub">${n} syllable${n > 1 ? 's' : ''}</div>${wordButtons(bySyl[n], (r) => `sw-t-${r.type}`)}`).join('');
+      const kinds = R.TYPES.slice(0, state.strict + 1);
+      const key = kinds.length > 1 ? `<div class="sw-wkey">${kinds.map((k) => `<span><i class="sw-t-${k}"></i>${k}</span>`).join('')}<span>closest first</span></div>` : '';
+      return help + groups + key;
+    }
+
+    function rhymesTab() {
+      if (dictState !== 'ready') return '<div class="sw-wempty">Loading the word list…</div>';
+      if (R.find(dict, state.word) < 0) {
+        return `<div class="sw-wempty">“${esc(state.word)}” isn’t in the word list, so there are no rhymes for it. Synonyms may still work.</div>`;
+      }
+      const stops = R.STRICTNESS.map((s, i) => `<button class="${i === state.strict ? 'sw-on' : ''}" data-act="strict" data-arg="${i}">${s}</button>`).join('');
+      return `<div class="sw-strict"><div class="sw-sub">Strictness</div>
+          <input class="sw-range" type="range" min="0" max="3" step="1" value="${state.strict}" data-strict style="--p:${state.strict * 100 / 3}%">
+          <div class="sw-stops">${stops}</div></div>
+        <div data-wbody>${rhymeBody()}</div>`;
+    }
+
+    function datamuseTab(kind) {
+      const got = dmCache[`${kind}:${state.word}`];
+      if (!got || got.status === 'loading') return '<div class="sw-wempty">Looking it up…</div>';
+      if (got.status === 'error') {
+        return `<div class="sw-wempty">${navigator.onLine === false ? 'You’re offline. Synonyms and antonyms need internet; rhymes still work.' : 'Couldn’t reach the word service.'} <button class="sw-link" data-act="word-retry">Try again</button></div>`;
+      }
+      const name = kind === 'syn' ? 'synonyms' : 'antonyms';
+      let html = got.words.length ? `<div class="sw-sub">${kind === 'syn' ? 'Synonyms' : 'Antonyms'}</div>${wordButtons(got.words)}` : `<div class="sw-wempty">No ${name} found.</div>`;
+      if (got.more && got.more.length) html += `<div class="sw-sub">Means like</div>${wordButtons(got.more)}`;
+      return html + '<div class="sw-wnote">From Datamuse (needs internet).</div>';
+    }
+
+    function wordSheet() {
+      const syl = dictState === 'ready' ? R.syllables(dict, state.word) : 0;
+      const back = state.wordTrail.length
+        ? `<button class="sw-wback" data-act="word-back">‹ ${esc(state.wordTrail[state.wordTrail.length - 1])}</button>` : '';
+      const body = state.wordTab === 'rhymes' ? rhymesTab() : datamuseTab(state.wordTab);
+      return `<div class="sw-dimmer" data-act="close-sheet"></div>
+        <div class="sw-sheet sw-wsheet">
+          <div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div>
+            ${back}
+            <div class="sw-whead"><b class="sw-keepcase">${esc(state.word)}</b>${syl ? `<span>${syl} syllable${syl > 1 ? 's' : ''}</span>` : ''}<button class="sw-x" data-act="close-sheet" aria-label="Close">✕</button></div>
+          </div>
+          ${seg('word-tab', [['rhymes', 'Rhymes'], ['syn', 'Synonyms'], ['ant', 'Antonyms']], state.wordTab, 'sw-wide')}
+          ${body}
+        </div>`;
     }
 
     function voicingPage(mode) {
@@ -387,13 +527,12 @@
       const scrollLeft = oldScroll ? oldScroll.scrollLeft : 0;
       const drawing = instrumentDrawing(mode);
       let page;
-      if (state.page === 'voicing') {
+      if (state.area === 'lyrics') {
+        page = `<div class="sw-page sw-lyrics">${header()}${pageTabs()}${lyricsPage()}</div>`;
+      } else if (state.page === 'voicing') {
         page = mode === 'land'
           ? `<div class="sw-page">${voicingPage(mode)}</div>`
-          : `<div class="sw-page">
-            <header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${picker()}</header>
-            ${pageTabs()}${voicingPage(mode)}
-          </div>`;
+          : `<div class="sw-page">${header()}${pageTabs()}${voicingPage(mode)}</div>`;
       } else if (mode === 'land') {
         page = `<div class="sw-page">
           <div class="sw-land-top">${progressionSection(false, 'No chords yet. Turn your phone upright to build one.')}<div class="sw-picks">${instrumentToggles()}</div></div>
@@ -401,7 +540,7 @@
         </div>`;
       } else {
         page = `<div class="sw-page">
-          <header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${picker()}</header>
+          ${header()}
           ${pageTabs()}
           <div class="sw-cols">
             <div class="sw-main">${notesStrip()}${chordsSection()}${progressionSection(true, 'No chords yet.<br>Drag a chord here from above.')}</div>
@@ -472,6 +611,16 @@
         case 'labels': state.labels = arg; break;
         case 'show-scale': state.shown = null; state.selChip = -1; break;
         case 'page': state.page = arg; break;
+        case 'area': state.area = arg; break;
+        case 'lookup': lookup(arg, false); break;
+        case 'word-pick': lookup(arg, true); break;
+        case 'word-back': state.word = state.wordTrail.pop(); if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, state.word); break;
+        case 'word-tab':
+          state.wordTab = arg;
+          if (arg !== 'rhymes') fetchWords(arg, state.word);
+          break;
+        case 'word-retry': fetchWords(state.wordTab, state.word); break;
+        case 'strict': state.strict = +arg; break;
         default: if (!vlAct(name, data)) return;
       }
       render();
@@ -493,6 +642,27 @@
         return;
       }
       act(target.dataset.act, target.dataset.arg, target.dataset);
+    });
+
+    // Find rhymes box: Search on the keyboard (or the Find button) opens the word sheet.
+    el.addEventListener('submit', (e) => {
+      if (!e.target.closest('[data-find]')) return;
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      input.blur();   // put the keyboard away
+      if (!R.clean(input.value)) return;
+      lookup(input.value, false);
+      render();
+    });
+    el.addEventListener('input', (e) => {
+      if (e.target.closest('[data-find]')) { state.lyQuery = e.target.value; return; }
+      // Strictness slider: update just the list (redrawing everything would drop the finger's grip).
+      if (e.target.matches('[data-strict]')) {
+        state.strict = +e.target.value;
+        e.target.style.setProperty('--p', `${state.strict * 100 / 3}%`);
+        el.querySelectorAll('.sw-stops button').forEach((b, i) => b.classList.toggle('sw-on', i === state.strict));
+        el.querySelector('[data-wbody]').innerHTML = rhymeBody();
+      }
     });
 
     // ---------- Drag and drop ----------
