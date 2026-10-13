@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta25';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta26';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -490,7 +490,9 @@
       const stops = R.STRICTNESS.map((s, i) => `<button class="${i === state.strict ? 'sw-on' : ''}" data-act="strict" data-arg="${i}">${s}</button>`).join('');
       // Words said more than one way ("live": liv / lyve) get a switch to rhyme one of them.
       const prons = R.pronunciations(dict, state.word);
-      const sayIt = prons.length ? `<div class="sw-sub">Say it</div>${seg('word-pron', [[-1, 'All']].concat(prons.map((p) => [p.pron, esc(p.label)])), state.wordPron, 'sw-wide sw-prons')}` : '';
+      const sayIt = prons.length ? `<label class="sw-pron"><span class="sw-sub">Pronunciation</span>
+          <select data-pron>${[[-1, 'All']].concat(prons.map((p) => [p.pron, p.label])).map(([v, label]) =>
+            `<option value="${v}" ${v === state.wordPron ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>` : '';
       return `${sayIt}<div class="sw-strict"><div class="sw-sub">Strictness</div>
           <input class="sw-range" type="range" min="0" max="2" step="1" value="${state.strict}" data-strict style="--p:${state.strict * 50}%">
           <div class="sw-stops">${stops}</div></div>
@@ -724,7 +726,6 @@
         case 'show-hidden': state.showHidden = true; break;
         case 'show-all': state.showAll[arg] = true; break;
         case 'show-less': state.showAll[arg] = false; break;
-        case 'word-pron': state.wordPron = +arg; state.showAll.rhymes = false; break;
         case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; state.showAll = {}; state.wordPron = -1; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
@@ -763,6 +764,13 @@
       input.blur();   // put the keyboard away
       if (!R.clean(input.value)) return;
       lookup(input.value, false);
+      render();
+    });
+    // Pronunciation dropdown on Rhymes ("live": All / lyve / liv).
+    el.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-pron]')) return;
+      state.wordPron = +e.target.value;
+      state.showAll.rhymes = false;
       render();
     });
     el.addEventListener('input', (e) => {
