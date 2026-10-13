@@ -134,15 +134,15 @@
   /** Entry "word CODE[,ALT…]" ("^word" = not a dictionary word, e.g. a name). tails[i] holds the
       rhyme part of every way to say the word ("live" = lyve / liv); phones[i] is the usual way. */
   function load(text) {
-    var words = [], phones = [], tails = [], real = [], index = Object.create(null);
+    var words = [], phones = [], alts = [], tails = [], real = [], index = Object.create(null);
     text.split('|').forEach(function (entry, i) {
       var sp = entry.indexOf(' '), w = entry.slice(0, sp), isName = w[0] === '^';
       if (isName) w = w.slice(1);
       var all = entry.slice(sp + 1).split(',').map(decode);
-      words.push(w); phones.push(all[0]); tails.push(all.map(tail)); real.push(!isName);
+      words.push(w); phones.push(all[0]); alts.push(all); tails.push(all.map(tail)); real.push(!isName);
       index[w] = i;
     });
-    return { words: words, phones: phones, tails: tails, real: real, index: index };
+    return { words: words, phones: phones, alts: alts, tails: tails, real: real, index: index };
   }
 
   /** The closest score between any way of saying one word and any way of saying the other. */
@@ -207,12 +207,65 @@
     return t < 0 ? null : TYPES[t];
   }
 
+  // ---------- Saying a word: spelled-out pronunciations ("liv", "lyve", "tuh-MAY-toh") ----------
+  var SPELL_C = { B: 'b', CH: 'ch', D: 'd', DH: 'th', F: 'f', G: 'g', HH: 'h', JH: 'j', K: 'k', L: 'l', M: 'm', N: 'n', NG: 'ng',
+    P: 'p', R: 'r', S: 's', SH: 'sh', T: 't', TH: 'th', V: 'v', W: 'w', Y: 'y', Z: 'z', ZH: 'zh' };
+  // Vowel spellings: [in a syllable that ends in a consonant, at the end of a syllable]
+  var SPELL_V = { AA: ['ah', 'ah'], AE: ['a', 'a'], AH: ['u', 'uh'], AO: ['aw', 'aw'], AW: ['ow', 'ow'], AY: ['y', 'y'],
+    EH: ['e', 'eh'], ER: ['ur', 'ur'], EY: ['ay', 'ay'], IH: ['i', 'ih'], IY: ['ee', 'ee'], OW: ['oh', 'oh'],
+    OY: ['oy', 'oy'], UH: ['uu', 'uu'], UW: ['oo', 'oo'] };
+
+  /** A pronunciation spelled out for reading: L AY1 V → "lyve", T AH0 M EY1 T OW2 → "tuh-MAY-toh"
+      (the loud syllable in capitals when there's more than one). */
+  function respell(phones) {
+    var vowelsAt = [];
+    phones.forEach(function (p, i) { if (isVowel(p)) vowelsAt.push(i); });
+    if (!vowelsAt.length) return phones.map(function (p) { return SPELL_C[p] || ''; }).join('');
+    // Syllables: each vowel gets the consonants before it (but leaves one for itself if there are
+    // several between two vowels: "win-ter").
+    var cuts = [0];
+    for (var k = 1; k < vowelsAt.length; k++) {
+      var between = vowelsAt[k] - vowelsAt[k - 1] - 1;
+      cuts.push(vowelsAt[k] - (between > 1 ? 1 : between));
+    }
+    var sylls = cuts.map(function (c, k) { return phones.slice(c, k + 1 < cuts.length ? cuts[k + 1] : phones.length); });
+    var many = sylls.length > 1;
+    return sylls.map(function (s) {
+      var vi = s.findIndex(isVowel), v = s[vi].slice(0, -1), loud = s[vi].slice(-1) === '1';
+      var onset = s.slice(0, vi).map(function (p) { return SPELL_C[p]; }).join('');
+      var coda = s.slice(vi + 1).map(function (p) { return SPELL_C[p]; }).join('');
+      var vs = SPELL_V[v][coda ? 0 : 1];
+      if (v === 'AY' && !onset && !coda) vs = 'eye';
+      // Vowel + r reads better spelled together: "tair", "teer", "KORD", "car", "poor".
+      var R_SPELL = { AA: 'ar', AO: 'or', OW: 'or', EH: 'air', AE: 'air', EY: 'air', IH: 'eer', IY: 'eer', UH: 'oor', UW: 'oor' };
+      if (coda[0] === 'r' && R_SPELL[v]) { vs = R_SPELL[v]; coda = coda.slice(1); }
+      var out = onset + vs + coda + (v === 'AY' && coda && coda.length === 1 ? 'e' : '');   // "lyve", "fyne"
+      return many && loud ? out.toUpperCase() : out;
+    }).join('-');
+  }
+
+  /** The different ways to say a word that rhyme differently: [{ pron (index), label ("liv") }].
+      Fewer than two → nothing to choose. */
+  function pronunciations(dict, word) {
+    var i = find(dict, word);
+    if (i < 0) return [];
+    var seen = {}, out = [];
+    dict.alts[i].forEach(function (ph, k) {
+      var key = dict.tails[i][k].join(' ');
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({ pron: k, label: respell(ph) });
+    });
+    return out.length > 1 ? out : [];
+  }
+
   /** Rhymes for a word, most usable first (see usability; closeness counts a little).
+      pron (optional) = rhyme only one way of saying it (an index from pronunciations()).
       Returns null if the word isn't in the list; otherwise [{ word, syllables, type }]. */
-  function rhymes(dict, word, strictness) {
+  function rhymes(dict, word, strictness, pron) {
     var i = find(dict, word);
     if (i < 0) return null;
-    var mine = dict.tails[i], found = [];
+    var mine = pron >= 0 && dict.tails[i][pron] ? [dict.tails[i][pron]] : dict.tails[i], found = [];
     for (var j = 0; j < dict.words.length; j++) {
       if (j === i) continue;
       var sc = bestScore(mine, dict.tails[j]), t = sc < 0 ? -1 : Math.floor(sc);
@@ -575,6 +628,7 @@
     CODE: CODE, SYMBOLS: SYMBOLS, TYPES: TYPES, STRICTNESS: STRICTNESS, FAMILY: FAMILY,
     encode: encode, decode: decode, tail: tail, compareTails: compareTails, tailScore: tailScore,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
+    respell: respell, pronunciations: pronunciations,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
     lineWords: lineWords, wordSpans: wordSpans, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,
     loadThesaurus: loadThesaurus, baseWord: baseWord, loadDefinitions: loadDefinitions, definitions: definitions, meanings: meanings, isVulgar: isVulgar, band: band

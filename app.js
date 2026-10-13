@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta24';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta25';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -54,6 +54,7 @@
       strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel
       showHidden: false,     // Synonyms/Antonyms: vulgar words shown at the bottom
       showAll: {},           // word-sheet tabs showing everything, not just the first batch: { rhymes: true }
+      wordPron: -1,          // Rhymes for one way of saying the word ("liv" / "lyve"); -1 = all
       // Voice leading
       vlNotes: 3,            // 3 or 4 notes per chord
       vlInv: true,           // allow inversions
@@ -421,6 +422,7 @@
       state.sheet = 'word';
       state.showHidden = false;
       state.showAll = {};
+      state.wordPron = -1;
       state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
       needWords();
       if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, w);
@@ -467,7 +469,7 @@
 
     /** The rhyme list for the current strictness: help line, then results grouped by syllables. */
     function rhymeBody() {
-      const all = R.rhymes(dict, state.word, state.strict);
+      const all = R.rhymes(dict, state.word, state.strict, state.wordPron);
       const { list, more } = firstBatch('rhymes', all, (r) => r.type);
       const help = `<div class="sw-whelp"><b>${R.STRICTNESS[state.strict]}:</b> ${STRICT_HELP[state.strict]}</div>`;
       if (!list.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
@@ -486,7 +488,10 @@
         return `<div class="sw-wempty">“${esc(state.word)}” isn’t in the word list, so there are no rhymes for it. Synonyms may still work.</div>`;
       }
       const stops = R.STRICTNESS.map((s, i) => `<button class="${i === state.strict ? 'sw-on' : ''}" data-act="strict" data-arg="${i}">${s}</button>`).join('');
-      return `<div class="sw-strict"><div class="sw-sub">Strictness</div>
+      // Words said more than one way ("live": liv / lyve) get a switch to rhyme one of them.
+      const prons = R.pronunciations(dict, state.word);
+      const sayIt = prons.length ? `<div class="sw-sub">Say it</div>${seg('word-pron', [[-1, 'All']].concat(prons.map((p) => [p.pron, esc(p.label)])), state.wordPron, 'sw-wide sw-prons')}` : '';
+      return `${sayIt}<div class="sw-strict"><div class="sw-sub">Strictness</div>
           <input class="sw-range" type="range" min="0" max="2" step="1" value="${state.strict}" data-strict style="--p:${state.strict * 50}%">
           <div class="sw-stops">${stops}</div></div>
         <div data-wbody>${rhymeBody()}</div>`;
@@ -719,7 +724,8 @@
         case 'show-hidden': state.showHidden = true; break;
         case 'show-all': state.showAll[arg] = true; break;
         case 'show-less': state.showAll[arg] = false; break;
-        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; state.showAll = {}; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
+        case 'word-pron': state.wordPron = +arg; state.showAll.rhymes = false; break;
+        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; state.showAll = {}; state.wordPron = -1; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
           if (arg === 'syn' || arg === 'ant') fetchWords(arg, state.word);

@@ -177,6 +177,13 @@
     check('Each step only adds rhymes', perfect.length < family.length && family.length < loose.length, true);
     check('Most usable first: common "lot" (family) before obscure "plop" (perfect)', words(family).indexOf('lot') < words(family).indexOf('plop'), true);
     check('Most usable first: names (scott) after real words (shot, rock)', words(family).indexOf('scott') > Math.max(words(family).indexOf('shot'), words(family).indexOf('rock')), true);
+    check('Spelled-out pronunciations: live = lyve / liv, tomato = tuh-MAY-toh / tuh-MAH-toh, tear = tair / teer',
+      ['live', 'tomato', 'tear'].map(function (w) { return R.pronunciations(D, w).map(function (p) { return p.label; }).join(' / '); }), ['lyve / liv', 'tuh-MAY-toh / tuh-MAH-toh', 'tair / teer']);
+    check('One way of saying it: "lyve" rhymes five not give; "liv" rhymes give not five', (function () {
+      var p = R.pronunciations(D, 'live'), lyve = words(R.rhymes(D, 'live', 0, p[0].pron)), liv = words(R.rhymes(D, 'live', 0, p[1].pron));
+      return [lyve.indexOf('five') >= 0, lyve.indexOf('give') >= 0, liv.indexOf('give') >= 0, liv.indexOf('five') >= 0];
+    })(), [true, false, true, false]);
+    check('Words said one way have no choice to make (stop)', R.pronunciations(D, 'stop'), []);
     check('Names are marked in the word list (george), everyday words aren\'t (something)', [D.real[D.index.george], D.real[D.index.something]], [false, true]);
     check('The word itself is left out', words(loose).indexOf('stop') < 0, true);
     check('Results know their syllables (nonstop = 2)', perfect.filter(function (r) { return r.word === 'nonstop'; })[0].syllables, 2);

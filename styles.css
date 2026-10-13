@@ -297,6 +297,7 @@
 /* Synonyms / Antonyms: one list */
 .sw-wlist { margin-top: 14px; }
 .sw-moremean.sw-gold { color: var(--sw-gold); }
+.sw-seg.sw-prons button { text-transform: none; font-family: var(--sw-body); font-weight: 600; letter-spacing: 0; }   /* "lyve", "tuh-MAY-toh" read as typed */
 .sw-seg.sw-4tabs button { padding: 7px 2px; font-size: 12.5px; }
 /* Meaning tab */
 .sw-defs { margin-top: 6px; }
