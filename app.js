@@ -12,17 +12,18 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta6';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta7';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
-  const DATAMUSE = 'https://api.datamuse.com/words';   // synonyms & antonyms (needs internet)
+  const THESAURUS_URL = 'thesaurus.js';   // synonyms & antonyms by meaning (~1.8 MB), loaded the first time they're asked for
+  const DATAMUSE = 'https://api.datamuse.com/words';   // extra related words (needs internet)
   const STRICT_HELP = [
     'Same vowel and same ending sound.',
     'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
     'Just the vowel sounds match.'
   ];
-  const SHOW_SYNONYMS = 80;   // common ones; rare ones are all listed after them
+  const SHOW_SYNONYMS = 40;   // extra online words: common ones; rare ones are all listed after them
 
   function mount(el) {
     const state = {
@@ -65,7 +66,9 @@
     let suppressClick = false;
     let lastInstrument = null;
     let dict = null;          // the searchable word list, once words.js has loaded
-    let dictState = 'idle';   // 'idle' | 'loading' | 'ready' | 'failed'
+    let dictState = 'idle';   // 'idle' | 'loading' | 'ready'
+    let th = null;            // the offline thesaurus, once thesaurus.js has loaded
+    let thState = 'idle';
     const dmCache = {};       // Datamuse answers: { 'syn:stop': { status, words } }
 
     // ---------- Small helpers ----------
@@ -357,15 +360,25 @@
 
     // ---------- Lyrics page ----------
     /** Loads the word list the first time it's needed (it's big, so Chords never waits for it). */
+    /** Adds a script once; calls done() when it's there. On failure, it's tried again next time. */
+    function loadScript(url, done, failed) {
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = done;
+      s.onerror = () => { s.remove(); failed(); };
+      document.head.appendChild(s);
+    }
     function needWords() {
       if (dictState !== 'idle') return;
       if (SW.WORDS) { dict = R.load(SW.WORDS); dictState = 'ready'; return; }
       dictState = 'loading';
-      const s = document.createElement('script');
-      s.src = WORDS_URL;
-      s.onload = () => { dict = R.load(SW.WORDS); dictState = 'ready'; render(); };
-      s.onerror = () => { dictState = 'idle'; s.remove(); render(); };   // try again next time
-      document.head.appendChild(s);
+      loadScript(WORDS_URL, () => { dict = R.load(SW.WORDS); dictState = 'ready'; render(); }, () => { dictState = 'idle'; render(); });
+    }
+    function needThesaurus() {
+      if (thState !== 'idle') return;
+      if (SW.THESAURUS) { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; return; }
+      thState = 'loading';
+      loadScript(THESAURUS_URL, () => { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; render(); }, () => { thState = 'idle'; render(); });
     }
 
     function lyricsPage() {
@@ -387,7 +400,7 @@
       const w = R.clean(word);
       if (!w) return;
       if (fromSheet && state.word && state.word !== w) state.wordTrail.push(state.word);
-      if (!fromSheet) { state.wordTrail = []; state.wordTab = 'rhymes'; }   // a new search starts on Rhymes
+      if (!fromSheet) { state.wordTrail = []; state.wordTab = 'rhymes'; state.strict = 1; }   // a new search starts on Rhymes, Family
       state.word = w;
       state.sheet = 'word';
       state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
@@ -395,8 +408,8 @@
       if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, w);
     }
 
-    /** Synonyms or antonyms from Datamuse, sorted best first (SW.rhymes ranks them).
-        Redraws when the answer arrives. */
+    /** Extra related words or opposites from Datamuse, sorted best first (SW.rhymes ranks them).
+        Shown under the offline thesaurus groups. Redraws when the answer arrives. */
     function fetchWords(kind, word) {
       const key = `${kind}:${word}`;
       if (dmCache[key] && dmCache[key].status !== 'error') return;
@@ -441,22 +454,49 @@
         <div data-wbody>${rhymeBody()}</div>`;
     }
 
-    function datamuseTab(kind) {
-      const got = dmCache[`${kind}:${state.word}`];
-      if (!got || got.status === 'loading') return '<div class="sw-wempty">Looking it up…</div>';
-      if (got.status === 'error') {
-        return `<div class="sw-wempty">${navigator.onLine === false ? 'You’re offline. Synonyms and antonyms need internet; rhymes still work.' : 'Couldn’t reach the word service.'} <button class="sw-link" data-act="word-retry">Try again</button></div>`;
-      }
+    /** Synonyms or antonyms: the offline thesaurus grouped by meaning, then extra words from Datamuse. */
+    function wordsTab(kind) {
+      needThesaurus();
+      if (dictState !== 'ready' || thState !== 'ready') return '<div class="sw-wempty">Loading the thesaurus…</div>';
+      const typed = R.clean(state.word), m = R.meanings(th, dict, state.word);
       const name = kind === 'syn' ? 'synonyms' : 'antonyms';
-      const html = got.words.length ? `<div class="sw-sub">${kind === 'syn' ? 'Synonyms' : 'Antonyms'} · best first</div>${wordButtons(got.words)}` : `<div class="sw-wempty">No ${name} found.</div>`;
-      return html + '<div class="sw-wnote">From Datamuse (needs internet). Sorted by how close the meaning is and how common the word is.</div>';
+      const shown = new Set([typed, m && m.base]);
+      let html = '';
+      if (m) {
+        if (m.base !== typed) html += `<div class="sw-whelp">Including meanings of <b>${esc(m.base)}</b>.</div>`;
+        const picks = kind === 'syn' ? m.top.synonyms : m.top.antonyms;
+        const groupCount = m.groups.filter((g) => (kind === 'syn' ? g.synonyms : g.antonyms).length).length;
+        if (picks.length > 2 && groupCount > 1) {
+          html += `<div class="sw-mean"><div class="sw-sub">Most common · any meaning</div>${wordButtons(picks)}</div><div class="sw-sub sw-bymean">By meaning</div>`;
+        }
+        html += m.groups.filter((g) => (kind === 'syn' ? g.synonyms : g.antonyms).length).map((g) => {
+          const list = kind === 'syn' ? g.synonyms : g.antonyms;
+          list.forEach((w) => shown.add(w));
+          const label = `${g.word !== typed ? `${esc(g.word)} · ` : ''}${g.pos}`;
+          return `<div class="sw-mean"><div class="sw-meanh"><span>${label}</span>${esc(g.gloss)}</div>${wordButtons(list)}</div>`;
+        }).join('');
+      }
+      if (!html) html = `<div class="sw-wempty">No ${name} in the offline thesaurus.</div>`;
+
+      const got = dmCache[`${kind}:${state.word}`];
+      let more;
+      if (!got || got.status === 'loading') more = '<div class="sw-wnote">Looking for more online…</div>';
+      else if (got.status === 'error') {
+        more = navigator.onLine === false
+          ? '<div class="sw-wnote">Connect to the internet for more related words.</div>'
+          : '<div class="sw-wnote">Couldn’t reach the online word service. <button class="sw-link" data-act="word-retry">Try again</button></div>';
+      } else {
+        const extra = got.words.filter((w) => !shown.has(w));
+        more = extra.length ? `<div class="sw-mean"><div class="sw-sub">More ${kind === 'syn' ? 'related words' : 'opposites'} · online</div>${wordButtons(extra)}</div>` : '';
+      }
+      return html + more + '<div class="sw-wnote">Grouped by meaning, from WordNet (works offline). Common words first, rare ones last.</div>';
     }
 
     function wordSheet() {
       const syl = dictState === 'ready' ? R.syllables(dict, state.word) : 0;
       const back = state.wordTrail.length
         ? `<button class="sw-wback" data-act="word-back">‹ ${esc(state.wordTrail[state.wordTrail.length - 1])}</button>` : '';
-      const body = state.wordTab === 'rhymes' ? rhymesTab() : datamuseTab(state.wordTab);
+      const body = state.wordTab === 'rhymes' ? rhymesTab() : wordsTab(state.wordTab);
       return `<div class="sw-dimmer" data-act="close-sheet"></div>
         <div class="sw-sheet sw-wsheet">
           <div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div>

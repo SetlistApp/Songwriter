@@ -13,7 +13,8 @@
    (One side adding a sound at the end, star / start, lands under vowel.)
    Strictness 0-2 (Perfect, Family, Vowel) lists that kind and every closer kind.
 
-   Also here: ranking synonyms and antonyms from Datamuse (the screen does the asking). */
+   Also here: the offline thesaurus (thesaurus.js, from WordNet: synonyms and antonyms grouped by
+   meaning) and ranking the extra online words from Datamuse (the screen does the asking). */
 (function (root) {
   var SW = root.SW = root.SW || {};
 
@@ -170,7 +171,7 @@
   };
   var posOf = function (x) { return (x.tags || []).filter(function (t) { return /^(n|v|adj|adv)$/.test(t); })[0] || null; };
   var popularity = function (f) { return Math.min(1, Math.log10(f + 1) / 2.5); };   // 0 rare … 1 very common
-  var usable = function (word) { return function (x) { return x.word !== word && /^[a-z'-]+$/.test(x.word); }; };
+  var usable = function (word) { return function (x) { return x.word !== word && /^[a-z' -]+$/.test(x.word); }; };
   var rarePenalty = function (x) { return freqOf(x) < RARE ? 10 : 0; };   // sinks rare words below every common one
 
   /** Synonyms, best first. me = Datamuse's own entry for the word (for its part of speech),
@@ -200,10 +201,98 @@
       .map(function (o) { return o.x.word; });
   }
 
+  // ---------- Offline thesaurus (thesaurus.js) ----------
+  /** Turns SW.THESAURUS into something fast to look up. Meanings are unpacked when first asked for. */
+  function loadThesaurus(th) {
+    var words = th.words.split('|'), heads = Object.create(null), picks = Object.create(null), forms = Object.create(null);
+    var id = function (s) { return parseInt(s, 36); };
+    var wordList = function (s) { return s ? s.split(',').map(function (x) { return words[id(x)]; }) : []; };
+    th.heads.split('|').forEach(function (h) {
+      var p = h.split(':'), w = words[id(p[0])];
+      heads[w] = p[1].split(',').map(id);
+      picks[w] = { synonyms: wordList(p[2]), antonyms: wordList(p[3]) };
+    });
+    th.forms.split('|').forEach(function (f) {
+      var p = f.split('>');
+      if (p[1]) forms[p[0]] = words[id(p[1])];
+    });
+    return { words: words, senses: th.senses.split('\n'), heads: heads, picks: picks, forms: forms };
+  }
+
+  /** The plain form of what was typed, if the thesaurus has it: "stopped" → stop, "running" → run,
+      "went" → go. Returns the word itself if it's already plain, null if unknown. */
+  function baseWord(th, word) {
+    var w = clean(word);
+    if (th.forms[w]) return th.forms[w];
+    var rules = [['ies', 'y'], ['ied', 'y'], ['ier', 'y'], ['iest', 'y'], ['es', ''], ['s', ''], ['ed', ''], ['ed', 'e'],
+      ['ing', ''], ['ing', 'e'], ['er', ''], ['er', 'e'], ['est', ''], ['est', 'e'], ["in'", ''], ["in'", 'e']];
+    for (var i = 0; i < rules.length; i++) {
+      var end = rules[i][0];
+      if (w.length <= end.length + 1 || w.slice(-end.length) !== end) continue;
+      var stem = w.slice(0, -end.length);
+      if (th.heads[stem + rules[i][1]]) return stem + rules[i][1];
+      // stopped → stop, running → run
+      if (stem.length > 2 && stem[stem.length - 1] === stem[stem.length - 2] && th.heads[stem.slice(0, -1)]) return stem.slice(0, -1);
+    }
+    return th.heads[w] ? w : null;
+  }
+
+  /** How common a word is, for sorting: its place in the word list (0 = most common).
+      A phrase counts as its rarest word, a bit lower; words not in the list (rare) come last. */
+  function commonRank(dict, w) {
+    if (w in dict.index) return dict.index[w];
+    var parts = w.split(' ');
+    if (parts.length > 1 && parts.every(function (p) { return p in dict.index; })) {
+      return 1.5 * Math.max.apply(null, parts.map(function (p) { return dict.index[p]; }));
+    }
+    return Infinity;
+  }
+  function byCommon(dict, list) {
+    return list.map(function (w, i) { return { w: w, r: commonRank(dict, w), i: i }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (o) { return o.w; });
+  }
+
+  var TOP_PICKS = 12;
+
+  /** A word's meanings, most useful first:
+      { base, top: { synonyms, antonyms }, groups: [{ word, pos, gloss, synonyms, antonyms }] }.
+      top = the best everyday words across all meanings ("stop": halt, quit, end, cease…).
+      "running" gives its own meanings ("running water") and then run's. Inside each group, common
+      words come first, then phrases, then rare words. null if the thesaurus doesn't know it. */
+  function meanings(th, dict, word) {
+    var typed = clean(word), base = baseWord(th, word);
+    var owners = [];
+    if (th.heads[typed]) owners.push(typed);
+    if (base && base !== typed) owners.push(base);
+    if (!owners.length) return null;
+    var name = { n: 'noun', v: 'verb', a: 'adjective', r: 'adverb' };
+    var list = function (s) { return s ? s.split(',').map(function (x) { return th.words[parseInt(x, 36)]; }) : []; };
+    var groups = [];
+    owners.forEach(function (owner) {
+      th.heads[owner].forEach(function (i) {
+        var parts = th.senses[i].split('\t');
+        groups.push({
+          word: owner, pos: name[parts[0][0]], gloss: parts[0].slice(1),
+          synonyms: byCommon(dict, list(parts[1]).filter(function (w) { return w !== owner && w !== typed; })),
+          antonyms: byCommon(dict, list(parts[2]))
+        });
+      });
+    });
+    // "Most common" picks were worked out by build-thesaurus.js (usage counts + how common each word is).
+    var top = function (key) {
+      var out = [];
+      owners.forEach(function (o) { th.picks[o][key].forEach(function (w) { if (w !== typed && out.indexOf(w) < 0) out.push(w); }); });
+      return out.slice(0, TOP_PICKS);
+    };
+    return { base: base || typed, top: { synonyms: top('synonyms'), antonyms: top('antonyms') }, groups: groups };
+  }
+
   SW.rhymes = {
     CODE: CODE, SYMBOLS: SYMBOLS, TYPES: TYPES, STRICTNESS: STRICTNESS, FAMILY: FAMILY,
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
-    rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms
+    rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
+    loadThesaurus: loadThesaurus, baseWord: baseWord, meanings: meanings
   };
 })(typeof window !== 'undefined' ? window : globalThis);

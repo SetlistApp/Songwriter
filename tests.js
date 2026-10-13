@@ -194,11 +194,29 @@
     var syn = R.rankSynonyms('stop', stopMe, stopSyns, stopRelated);
     check('Synonyms: rare words kept, but last (kibosh)', syn[syn.length - 1], 'kibosh');
     check('Synonyms: a limit trims common words, never rare ones', R.rankSynonyms('stop', stopMe, stopSyns, stopRelated, 2), syn.slice(0, 2).concat(['kibosh']));
-    check('Synonyms: phrases left out (give up)', syn.indexOf('give up'), -1);
+    check('Online synonyms: phrases kept (give up)', syn.indexOf('give up') >= 0, true);
     check('Synonyms: close verbs come before other meanings (cease before point)', syn.indexOf('cease') < syn.indexOf('point'), true);
     check('Synonyms: related words are included too (end)', syn.indexOf('end') >= 0, true);
     var ant = R.rankAntonyms('stop', [dm('preserve', 14.5), dm('start', 79.1), dm('carry on', 8.6), dm('continue', 63.3), dm('continuant', 0.1), dm('go', 300)]);
-    check('Antonyms: common ones first, rare ones last (continuant)', ant, ['go', 'start', 'continue', 'preserve', 'continuant']);
+    check('Antonyms: common ones first, rare ones last (continuant)', ant, ['go', 'start', 'continue', 'preserve', 'carry on', 'continuant']);
+    // --- Offline thesaurus (thesaurus.js, from WordNet) ---
+    var TH = R.loadThesaurus(SW.THESAURUS);
+    var stopM = R.meanings(TH, D, 'stop');
+    var withEnd = stopM.groups.filter(function (g) { return g.synonyms.indexOf('end') >= 0; })[0];
+    check('Thesaurus: stop has a meaning with end, finish, cease', !!withEnd && ['finish', 'cease'].every(function (w) { return withEnd.synonyms.indexOf(w) >= 0; }), true);
+    check('Thesaurus: that meaning is a verb with begin as its opposite', withEnd && [withEnd.pos, withEnd.antonyms.indexOf('begin') >= 0], ['verb', true]);
+    var punct = stopM.groups.findIndex(function (g) { return /punctuation/.test(g.gloss); });
+    check('Thesaurus: everyday meanings come before "punctuation mark"', punct < 0 || stopM.groups.indexOf(withEnd) < punct, true);
+    check('Thesaurus: go\'s first meaning is move / travel (its main use, verb, leads)', ['move', 'travel'].every(function (w) { return R.meanings(TH, D, 'go').groups[0].synonyms.indexOf(w) >= 0; }), true);
+    check('Thesaurus: phrases are included (give up)', stopM.groups.some(function (g) { return g.synonyms.indexOf('give up') >= 0; }), true);
+    check('Thesaurus: the word itself is left out of its synonyms', stopM.groups.every(function (g) { return g.synonyms.indexOf('stop') < 0; }), true);
+    var rareAfterCommon = function (list) { var seenRare = false; return list.every(function (w) { var rare = !w.split(' ').every(function (part) { return part in D.index; }); if (!rare && seenRare) return false; seenRare = seenRare || rare; return true; }); };
+    check('Thesaurus: in every group, rare words come after common ones', ['stop', 'cold', 'happy', 'run', 'light'].every(function (w) { return R.meanings(TH, D, w).groups.every(function (g) { return rareAfterCommon(g.synonyms); }); }), true);
+    check('Thesaurus: word forms find their base (went → go, happier → happy, stopped → stop)', ['went', 'happier', 'stopped', "lovin'"].map(function (w) { return R.baseWord(TH, w); }), ['go', 'happy', 'stop', 'love']);
+    check('Thesaurus: "running" shows its own meanings, then run\'s', (function (m) { return [m.groups[0].word, m.groups[m.groups.length - 1].word]; })(R.meanings(TH, D, 'running')), ['running', 'run']);
+    check('Thesaurus: happy ↔ unhappy', R.meanings(TH, D, 'happy').groups[0].antonyms.indexOf('unhappy') >= 0, true);
+    check('Thesaurus: unknown word gives null', R.meanings(TH, D, 'skrrt'), null);
+    check('Thesaurus: "most common" picks for stop include end and quit', ['end', 'quit'].every(function (w) { return stopM.top.synonyms.indexOf(w) >= 0; }), true);
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;
@@ -208,6 +226,7 @@
   if (typeof module !== 'undefined' && typeof window === 'undefined') {
     require('./theory.js');
     require('./words.js');
+    require('./thesaurus.js');
     require('./rhymes.js');
     var results = SW.runTests(), failed = results.filter(function (r) { return !r.ok; });
     failed.forEach(function (r) { console.log('FAIL  ' + r.name + '\n      got:  ' + JSON.stringify(r.got) + '\n      want: ' + JSON.stringify(r.want)); });

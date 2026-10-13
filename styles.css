@@ -294,6 +294,13 @@
 .sw-wkey i.sw-t-perfect { border-color: rgba(227, 168, 59, 0.6); }
 .sw-wkey i.sw-t-family { border-style: dashed; border-color: #5d5a62; }
 .sw-wnote { margin-top: 16px; font-size: 11.5px; color: var(--sw-dim); }
+/* One meaning of a word in the Synonyms / Antonyms tabs: "verb · have an end…" above its words */
+.sw-mean { margin-top: 16px; }
+.sw-wsheet .sw-sub.sw-bymean { margin: 22px 0 -6px; padding-top: 12px; border-top: 1px solid var(--sw-line); }
+.sw-meanh { font-size: 12.5px; line-height: 1.4; color: var(--sw-dim); margin-bottom: 7px; }
+.sw-meanh span {
+  font-family: var(--sw-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sw-gold); margin-right: 6px;
+}
 
 /* ---------- Voice leading ---------- */
 .sw-vlbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
