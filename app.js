@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta8';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta9';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -49,6 +49,7 @@
       wordTrail: [],         // words looked up before it from inside the sheet (for ‹ Back)
       wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant'
       strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel
+      showHidden: false,     // Synonyms/Antonyms: vulgar words shown at the bottom
       // Voice leading
       vlNotes: 3,            // 3 or 4 notes per chord
       vlInv: true,           // allow inversions
@@ -404,6 +405,7 @@
       if (!fromSheet) { state.wordTrail = []; state.wordTab = 'rhymes'; state.strict = 1; }   // a new search starts on Rhymes, Family
       state.word = w;
       state.sheet = 'word';
+      state.showHidden = false;
       state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
       needWords();
       if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, w);
@@ -455,23 +457,32 @@
         <div data-wbody>${rhymeBody()}</div>`;
     }
 
-    /** Synonyms or antonyms: one list, best first. Offline thesaurus words (common ones and phrases),
-        then extra words from Datamuse when online, then rare words. */
+    /** Synonyms or antonyms: one list, best first. Single words before phrases, everyday words before
+        rare ones; Datamuse's extra words (online) join each band. Vulgar words wait behind a button
+        at the bottom, unless the search itself is vulgar. */
     function wordsTab(kind) {
       needThesaurus();
       if (dictState !== 'ready' || thState !== 'ready') return '<div class="sw-wempty">Loading the thesaurus…</div>';
       const typed = R.clean(state.word), m = R.meanings(th, dict, state.word);
       const name = kind === 'syn' ? 'synonyms' : 'antonyms';
-      const offline = m ? (kind === 'syn' ? m.best.synonyms : m.best.antonyms) : [];
-      const isRare = (w) => !w.split(' ').every((p) => R.find(dict, p) >= 0);
-      const shown = new Set([typed, m && m.base].concat(offline));
+      const best = m ? (kind === 'syn' ? m.best.synonyms : m.best.antonyms) : { words: [], hidden: [] };
+      const allowVulgar = m ? m.vulgarSearch : !!(th.vulgar[typed]);
+      const seen = new Set([typed, m && m.base].concat(best.words.map((x) => x.word), best.hidden));
       const got = dmCache[`${kind}:${state.word}`];
-      const online = got && got.status === 'ok' ? got.words.filter((w) => !shown.has(w)) : [];
-      const list = offline.filter((w) => !isRare(w)).concat(online, offline.filter(isRare));
+      const online = got && got.status === 'ok' ? got.words.filter((w) => !seen.has(w)) : [];
+      const hidden = best.hidden.concat(allowVulgar ? [] : online.filter((w) => R.isVulgar(th, w)));
+      const extra = online.filter((w) => allowVulgar || !R.isVulgar(th, w)).map((w) => ({ word: w, band: R.band(dict, w) }));
+      // Bands: 0 everyday single words, 1 everyday phrases, 2 rare single words, 3 rare phrases.
+      const list = [0, 1, 2, 3].flatMap((b) => best.words.filter((x) => x.band === b).concat(extra.filter((x) => x.band === b))).map((x) => x.word);
 
       let html = m && m.base !== typed ? `<div class="sw-whelp">Including words for <b>${esc(m.base)}</b>.</div>` : '';
       html += list.length ? wordButtons(list) : `<div class="sw-wempty">No ${name} found.</div>`;
-      let note = 'Best first: everyday words and common meanings, rare words last. Works offline.';
+      if (hidden.length) {
+        html += state.showHidden
+          ? `<div class="sw-sub">Vulgar</div>${wordButtons(hidden)}`
+          : `<button class="sw-moremean" data-act="show-hidden">Show ${hidden.length} hidden word${hidden.length > 1 ? 's' : ''} (vulgar)</button>`;
+      }
+      let note = 'Best first: everyday single words, then phrases, then rare words. Works offline.';
       if (!got || got.status === 'loading') note += ' Looking for more online…';
       else if (got.status === 'error') note += navigator.onLine === false ? ' Connect to the internet for a few more.' : ' <button class="sw-link" data-act="word-retry">Try online again</button>';
       return `<div class="sw-wlist">${html}</div><div class="sw-wnote">${note}</div>`;
@@ -640,7 +651,8 @@
         case 'area': state.area = arg; break;
         case 'lookup': lookup(arg, false); break;
         case 'word-pick': lookup(arg, true); break;
-        case 'word-back': state.word = state.wordTrail.pop(); if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, state.word); break;
+        case 'show-hidden': state.showHidden = true; break;
+        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
           if (arg !== 'rhymes') fetchWords(arg, state.word);

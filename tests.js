@@ -216,11 +216,19 @@
     check('Thesaurus: "running" shows its own meanings, then run\'s', (function (m) { return [m.groups[0].word, m.groups[m.groups.length - 1].word]; })(R.meanings(TH, D, 'running')), ['running', 'run']);
     check('Thesaurus: happy ↔ unhappy', R.meanings(TH, D, 'happy').groups[0].antonyms.indexOf('unhappy') >= 0, true);
     check('Thesaurus: unknown word gives null', R.meanings(TH, D, 'skrrt'), null);
-    var best = stopM.best.synonyms;
+    var best = stopM.best.synonyms.words.map(function (x) { return x.word; });
     check('One list: stop\'s top 15 include halt, quit, cease, end', ['halt', 'quit', 'cease', 'end'].every(function (w) { var i = best.indexOf(w); return i >= 0 && i < 15; }), true);
     check('One list: each word once', best.length === new Set(best).size, true);
     check('One list: rare words last (kibosh after end)', best.indexOf('kibosh') > best.indexOf('end'), true);
-    check('One list: antonyms for stop start with start', stopM.best.antonyms[0], 'start');
+    check('One list: antonyms for stop start with start', stopM.best.antonyms.words[0].word, 'start');
+    var firstPhrase = best.findIndex(function (w) { return w.indexOf(' ') >= 0; });
+    check('One list: everyday single words come before any phrase', best.slice(firstPhrase).every(function (w) { return w.indexOf(' ') >= 0 || !(w in D.index); }), true);
+    var loveM = R.meanings(TH, D, 'love'), loveWords = loveM.best.synonyms.words.map(function (x) { return x.word; });
+    check('Vulgar: hidden from love\'s list (fuck, screw), kept aside', [loveWords.indexOf('fuck'), loveWords.indexOf('screw'), loveM.best.synonyms.hidden.indexOf('fuck') >= 0], [-1, -1, true]);
+    check('Vulgar: love\'s normal words stay (enjoy, passion, darling)', ['enjoy', 'passion', 'darling'].every(function (w) { return loveWords.indexOf(w) >= 0; }), true);
+    check('Vulgar: stop hides nothing', stopM.best.synonyms.hidden, []);
+    check('Vulgar: a vulgar search shows everything', (function (m) { return [m.vulgarSearch, m.best.synonyms.hidden.length]; })(R.meanings(TH, D, 'fuck')), [true, 0]);
+    check('Vulgar: swear words are known even outside WordNet labels', [R.isVulgar(TH, 'shit'), R.isVulgar(TH, 'stop')], [true, false]);
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;

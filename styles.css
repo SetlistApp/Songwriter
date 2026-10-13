@@ -296,6 +296,10 @@
 .sw-wnote { margin-top: 16px; font-size: 11.5px; color: var(--sw-dim); }
 /* Synonyms / Antonyms: one list */
 .sw-wlist { margin-top: 14px; }
+.sw-moremean {
+  display: block; width: 100%; margin-top: 14px; min-height: 40px; border-radius: 10px;
+  border: 1px dashed var(--sw-line); color: var(--sw-dim); font-family: var(--sw-display); font-weight: 600; font-size: 13.5px;
+}
 
 /* ---------- Voice leading ---------- */
 .sw-vlbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }

@@ -215,8 +215,18 @@
       var p = f.split('>');
       if (p[1]) forms[p[0]] = words[id(p[1])];
     });
-    return { words: words, senses: th.senses.split('\n'), heads: heads, forms: forms };
+    var vulgar = Object.create(null);
+    (th.vulgar || '').split('|').concat(SWEARS).forEach(function (w) { if (w) vulgar[w] = true; });
+    return { words: words, senses: th.senses.split('\n'), heads: heads, forms: forms, vulgar: vulgar };
   }
+
+  // Backstop for words from outside WordNet's labels (Datamuse extras): core swear words and slurs.
+  var SWEARS = ['fuck', 'fucking', 'fucked', 'fucker', 'motherfucker', 'shit', 'shitty', 'bullshit', 'cunt', 'twat',
+    'bitch', 'bitches', 'asshole', 'dick', 'dickhead', 'cock', 'pussy', 'whore', 'slut', 'bastard', 'piss',
+    'pissed', 'damn', 'goddamn', 'nigger', 'nigga', 'fag', 'faggot', 'dyke', 'retard', 'skank', 'wanker', 'bollocks'];
+
+  /** True if a word is vulgar wherever it shows up (it's then hidden unless the search itself is vulgar). */
+  function isVulgar(th, w) { return !!th.vulgar[w]; }
 
   /** The plain form of what was typed, if the thesaurus has it: "stopped" → stop, "running" → run,
       "went" → go. Returns the word itself if it's already plain, null if unknown. */
@@ -263,25 +273,35 @@
     return 0;
   }
 
-  /** Every word from every meaning in one list, best first: words from often-used meanings that are
-      everyday words come first ("stop": halt, quit, end, cease…); rare words last. Each word once. */
-  function bestOf(dict, groups, key) {
-    var score = {}, order = [];
+  /** Which of four bands a word sorts into: 0 everyday single word, 1 everyday phrase, 2 rare single, 3 rare phrase. */
+  function band(dict, w) { return (commonness(dict, w) > 0 ? 0 : 2) + (w.indexOf(' ') >= 0 ? 1 : 0); }
+
+  /** Every word from every meaning in one list, best first, each word once: single words before
+      phrases, everyday words before rare ones; inside each band, words from often-used meanings that
+      are most common come first ("stop": halt, block, break, quit, cease…).
+      Words that are vulgar in every meaning they came from go to hidden (unless showVulgar).
+      Returns { words: [{ word, band }], hidden: [word] }. */
+  function bestOf(th, dict, groups, key, showVulgar) {
+    var score = {}, order = [], vulgarOnly = {};
     groups.forEach(function (g) {
       g[key].forEach(function (w) {
-        if (!(w in score)) { score[w] = 0; order.push(w); }
+        var vul = th.vulgar[w] || (key === 'synonyms' && (g.vulgarAll || g.vulgarWords[w]));
+        if (vul && !showVulgar) { if (!(w in score)) vulgarOnly[w] = true; return; }
+        if (!(w in score)) { score[w] = 0; order.push(w); delete vulgarOnly[w]; }
         var c = commonness(dict, w);
         score[w] += Math.log2(g.used + 2) * c * c;
       });
     });
-    return order.map(function (w, i) { return { w: w, s: score[w], i: i }; })
-      .sort(function (a, b) { return b.s - a.s || a.i - b.i; })
-      .map(function (o) { return o.w; });
+    var words = order.map(function (w, i) { return { word: w, band: band(dict, w), s: score[w], i: i }; })
+      .sort(function (a, b) { return a.band - b.band || b.s - a.s || a.i - b.i; })
+      .map(function (o) { return { word: o.word, band: o.band }; });
+    return { words: words, hidden: Object.keys(vulgarOnly) };
   }
 
   /** A word's meanings, most useful first:
-      { base, best: { synonyms, antonyms }, groups: [{ word, pos, gloss, used, synonyms, antonyms }] }.
-      best = all of them in one list, best first (see bestOf).
+      { base, vulgarSearch, best: { synonyms, antonyms }, groups: [{ word, pos, gloss, used, synonyms, antonyms }] }.
+      best = all of them in one list, best first (see bestOf). vulgarSearch = the word itself is
+      vulgar in all its meanings ("fuck"), so nothing is hidden; "love" or "screw" aren't.
       "running" gives its own meanings ("running water") and then run's. Inside each group, common
       words come first, then phrases, then rare words. null if the thesaurus doesn't know it. */
   function meanings(th, dict, word) {
@@ -295,15 +315,22 @@
     var groups = [];
     owners.forEach(function (owner) {
       th.heads[owner].forEach(function (m) {
-        var parts = th.senses[m.sense].split('\t');
+        var parts = th.senses[m.sense].split('\t'), vulgarWords = {};
+        list(parts[3] === '*' ? '' : parts[3]).forEach(function (w) { vulgarWords[w] = true; });
         groups.push({
           word: owner, pos: name[parts[0][0]], gloss: parts[0].slice(1), used: m.used,
+          vulgarAll: parts[3] === '*', vulgarWords: vulgarWords,
+          selfVulgar: parts[3] === '*' || !!vulgarWords[owner] || !!th.vulgar[owner],
           synonyms: byCommon(dict, list(parts[1]).filter(function (w) { return w !== owner && w !== typed; })),
           antonyms: byCommon(dict, list(parts[2]))
         });
       });
     });
-    return { base: base || typed, best: { synonyms: bestOf(dict, groups, 'synonyms'), antonyms: bestOf(dict, groups, 'antonyms') }, groups: groups };
+    var vulgarSearch = !!th.vulgar[typed] || groups.every(function (g) { return g.selfVulgar; });
+    return {
+      base: base || typed, vulgarSearch: vulgarSearch, groups: groups,
+      best: { synonyms: bestOf(th, dict, groups, 'synonyms', vulgarSearch), antonyms: bestOf(th, dict, groups, 'antonyms', vulgarSearch) }
+    };
   }
 
   SW.rhymes = {
@@ -311,6 +338,6 @@
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
-    loadThesaurus: loadThesaurus, baseWord: baseWord, meanings: meanings
+    loadThesaurus: loadThesaurus, baseWord: baseWord, meanings: meanings, isVulgar: isVulgar, band: band
   };
 })(typeof window !== 'undefined' ? window : globalThis);
