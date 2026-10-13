@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta5';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta6';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -22,7 +22,7 @@
     'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
     'Just the vowel sounds match.'
   ];
-  const SHOW_SYNONYMS = 40;
+  const SHOW_SYNONYMS = 80;   // common ones; rare ones are all listed after them
 
   function mount(el) {
     const state = {
@@ -405,7 +405,7 @@
       const w = encodeURIComponent(word);
       const done = kind === 'syn'
         ? Promise.all([ask(`sp=${w}&md=p&max=1`), ask(`rel_syn=${w}&md=fp&max=100`), ask(`ml=${w}&md=fp&max=150`)])
-          .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related).slice(0, SHOW_SYNONYMS))
+          .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related, SHOW_SYNONYMS))
         : ask(`rel_ant=${w}&md=f&max=50`).then((ants) => R.rankAntonyms(word, ants));
       done.then((words) => { dmCache[key] = { status: 'ok', words }; })
         .catch(() => { dmCache[key] = { status: 'error', words: [] }; })

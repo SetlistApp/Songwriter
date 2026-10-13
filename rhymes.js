@@ -163,18 +163,20 @@
   // from "full stop"). These sort its answers so the likely ones come first: words that are
   // true synonyms, closely related, common, and used the same way (a verb for a verb).
   // Each list item is Datamuse's { word, tags } (asked with md=fp: frequency + part of speech).
-  var MIN_FREQ = 0.3;   // per million words; rarer ones (kibosh) are left out
+  var RARE = 0.3;   // per million words; rarer ones (kibosh) still show, but after all the others
   var freqOf = function (x) {
     var f = (x.tags || []).filter(function (t) { return t.indexOf('f:') === 0; })[0];
     return f ? +f.slice(2) : 0;
   };
   var posOf = function (x) { return (x.tags || []).filter(function (t) { return /^(n|v|adj|adv)$/.test(t); })[0] || null; };
   var popularity = function (f) { return Math.min(1, Math.log10(f + 1) / 2.5); };   // 0 rare … 1 very common
-  var usable = function (word) { return function (x) { return x.word !== word && /^[a-z'-]+$/.test(x.word) && freqOf(x) >= MIN_FREQ; }; };
+  var usable = function (word) { return function (x) { return x.word !== word && /^[a-z'-]+$/.test(x.word); }; };
+  var rarePenalty = function (x) { return freqOf(x) < RARE ? 10 : 0; };   // sinks rare words below every common one
 
   /** Synonyms, best first. me = Datamuse's own entry for the word (for its part of speech),
-      syns = rel_syn answers, related = ml ("means like") answers in Datamuse's order. */
-  function rankSynonyms(word, me, syns, related) {
+      syns = rel_syn answers, related = ml ("means like") answers in Datamuse's order.
+      maxCommon (optional) limits the common words; rare ones always follow, all of them. */
+  function rankSynonyms(word, me, syns, related, maxCommon) {
     var myPos = me && me.word === word ? posOf(me) : null;
     var strict = {}, all = {};
     syns.forEach(function (x) { strict[x.word] = true; });
@@ -182,16 +184,17 @@
     syns.forEach(function (x) { if (!all[x.word]) all[x.word] = { x: x, rel: 0.3 }; });
     return Object.keys(all).map(function (k) { return all[k]; }).filter(function (o) { return usable(word)(o.x); })
       .map(function (o) {
-        var score = 0.45 * o.rel + 0.3 * popularity(freqOf(o.x)) + (strict[o.x.word] ? 0.25 : 0) + (myPos && posOf(o.x) === myPos ? 0.2 : 0);
-        return { word: o.x.word, score: score };
+        var score = 0.45 * o.rel + 0.3 * popularity(freqOf(o.x)) + (strict[o.x.word] ? 0.25 : 0) + (myPos && posOf(o.x) === myPos ? 0.2 : 0) - rarePenalty(o.x);
+        return { word: o.x.word, score: score, rare: !!rarePenalty(o.x) };
       })
       .sort(function (a, b) { return b.score - a.score; })
+      .filter(function (o, i) { return o.rare || !maxCommon || i < maxCommon; })
       .map(function (o) { return o.word; });
   }
 
   /** Antonyms, best first: Datamuse's order counts a little, how common the word is counts more. */
   function rankAntonyms(word, ants) {
-    return ants.map(function (x, i) { return { x: x, score: 0.25 * (1 - i / ants.length) + 0.75 * popularity(freqOf(x)) }; })
+    return ants.map(function (x, i) { return { x: x, score: 0.25 * (1 - i / ants.length) + 0.75 * popularity(freqOf(x)) - rarePenalty(x) }; })
       .filter(function (o) { return usable(word)(o.x); })
       .sort(function (a, b) { return b.score - a.score; })
       .map(function (o) { return o.x.word; });

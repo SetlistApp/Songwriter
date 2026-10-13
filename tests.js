@@ -192,12 +192,13 @@
     var stopRelated = [dm('stoppage', 0.7, 'n'), dm('cease', 9.1, 'v'), dm('kibosh', 0.02, 'n'), dm('quit', 8.4, 'v'),
       dm('halt', 6.3, 'n'), dm('pause', 20.1, 'v'), dm('point', 274.9, 'n'), dm('end', 160.2, 'v'), dm('diaphragm', 4.5, 'n')];
     var syn = R.rankSynonyms('stop', stopMe, stopSyns, stopRelated);
-    check('Synonyms: rare words left out (kibosh)', syn.indexOf('kibosh'), -1);
+    check('Synonyms: rare words kept, but last (kibosh)', syn[syn.length - 1], 'kibosh');
+    check('Synonyms: a limit trims common words, never rare ones', R.rankSynonyms('stop', stopMe, stopSyns, stopRelated, 2), syn.slice(0, 2).concat(['kibosh']));
     check('Synonyms: phrases left out (give up)', syn.indexOf('give up'), -1);
     check('Synonyms: close verbs come before other meanings (cease before point)', syn.indexOf('cease') < syn.indexOf('point'), true);
     check('Synonyms: related words are included too (end)', syn.indexOf('end') >= 0, true);
     var ant = R.rankAntonyms('stop', [dm('preserve', 14.5), dm('start', 79.1), dm('carry on', 8.6), dm('continue', 63.3), dm('continuant', 0.1), dm('go', 300)]);
-    check('Antonyms: common ones first (go, start, continue before preserve)', ant, ['go', 'start', 'continue', 'preserve']);
+    check('Antonyms: common ones first, rare ones last (continuant)', ant, ['go', 'start', 'continue', 'preserve', 'continuant']);
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;
