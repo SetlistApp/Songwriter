@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta18';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta19';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -25,7 +25,8 @@
     'Just the vowel sounds match.'
   ];
   // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
-  const FIRST = { rhymes: 80, syn: 40, ant: 40, def: 4 };
+  // Rhymes count per kind (perfect, family, vowel), so lots of perfect rhymes can't hide the family ones.
+  const FIRST = { rhymes: 30, syn: 40, ant: 40, def: 4 };
   const FIRST_MEANINGS = 4;   // meaning groups shown before "Show more meanings"   // extra online words: common ones; rare ones are all listed after them
 
   function mount(el) {
@@ -450,10 +451,15 @@
         .then(() => { if (state.sheet === 'word' && state.word === word && state.wordTab === kind) render(); });
     }
 
-    /** The first batch of a list for a tab, plus a "Show N more" button if there's more. */
-    function firstBatch(tab, list) {
-      const n = FIRST[tab], hidden = state.showAll[tab] ? 0 : Math.max(0, list.length - n);
-      return { list: hidden ? list.slice(0, n) : list, more: hidden ? `<button class="sw-moremean sw-gold" data-act="show-all" data-arg="${tab}">Show ${hidden} more</button>` : '' };
+    /** The first batch of a list for a tab, plus "Show N more" (or "Show fewer" once it's open).
+        kindOf (optional) splits the batch by kind: the first N of each kind are shown. */
+    function firstBatch(tab, list, kindOf) {
+      const n = FIRST[tab], seen = {};
+      const first = kindOf ? list.filter((x) => { const k = kindOf(x); seen[k] = (seen[k] || 0) + 1; return seen[k] <= n; }) : list.slice(0, n);
+      const extra = list.length - first.length;
+      if (!extra) return { list, more: '' };
+      if (state.showAll[tab]) return { list, more: `<button class="sw-moremean" data-act="show-less" data-arg="${tab}">Show fewer</button>` };
+      return { list: first, more: `<button class="sw-moremean sw-gold" data-act="show-all" data-arg="${tab}">Show ${extra} more</button>` };
     }
 
     const wordButtons = (list, cls = () => '') => `<div class="sw-words">${list.map((w) =>
@@ -462,7 +468,7 @@
     /** The rhyme list for the current strictness: help line, then results grouped by syllables. */
     function rhymeBody() {
       const all = R.rhymes(dict, state.word, state.strict);
-      const { list, more } = firstBatch('rhymes', all);
+      const { list, more } = firstBatch('rhymes', all, (r) => r.type);
       const help = `<div class="sw-whelp"><b>${R.STRICTNESS[state.strict]}:</b> ${STRICT_HELP[state.strict]}</div>`;
       if (!list.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
       const bySyl = {};
@@ -712,6 +718,7 @@
         case 'word-pick': lookup(arg, true); break;
         case 'show-hidden': state.showHidden = true; break;
         case 'show-all': state.showAll[arg] = true; break;
+        case 'show-less': state.showAll[arg] = false; break;
         case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; state.showAll = {}; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
