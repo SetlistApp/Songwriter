@@ -70,7 +70,7 @@
     return part.map(function (p, i) {
       if (!isVowel(p)) return p;
       var v = p.slice(0, -1);
-      if ((v === 'IY' || v === 'IH') && part[i + 1] === 'R') v = 'IH';   // "ear" sound: here / fear are written differently but sound the same
+      if ((v === 'IY' || v === 'IH') && part[i + 1] === 'R') v = 'IY';   // "ear" sound: here / fear are written differently but sound the same
       if (i > 0 && p[p.length - 1] === '0' && (v === 'AH' || v === 'IH')) return 'UH0';   // quiet "uh"
       return v;
     });
@@ -79,10 +79,10 @@
   // "cot" and "caught" sound the same to most American ears, so AA and AO match beyond Perfect.
   // Vowels that sound alike when sung count as one beyond Perfect: "cot"/"caught" (AA/AO), "ih"/"ee"
   // (thing/mean: "-ing" is usually sung "-een"), and "oo" as in good/food (UH/UW).
-  // "ih"/"ee" only blur right before m, n, ng (thing / mean, sin / seen, him / team) or r (fear / here,
-  // the dictionary writes those two differently); elsewhere they're clearly different (live / leave).
+  // "ih"/"ee" only blur right before m, n, ng (thing / mean, sin / seen, him / team); elsewhere they're
+  // clearly different (live / leave). (Before r they're one sound, "ear"; tail() writes both as IY.)
   var CLOSE = { AO: 'AA', UW: 'UH' };
-  var NASAL = { M: 1, N: 1, NG: 1, R: 1 };
+  var NASAL = { M: 1, N: 1, NG: 1 };
   var nearVowel = function (v, next) {
     if ((v === 'IY' || v === 'IH') && NASAL[next]) return 'IH';
     return CLOSE[v] || v;
@@ -168,6 +168,30 @@
   // little for how close it sounds, so a common family rhyme ("lot") can beat an obscure perfect
   // one ("plop"). The strictness slider still decides which kinds are listed.
   var CLOSENESS = { 0: 1, 1: 0.75, 1.3: 0.65, 1.4: 0.6, 1.5: 0.55, 1.6: 0.5, 2: 0.4, 2.3: 0.3 };
+  var SONORANT = { M: 1, N: 1, NG: 1, L: 1, R: 1, W: 1, Y: 1 };   // humming / flowing sounds
+
+  /** For vowel rhymes (only the vowels match): how alike the endings sound, 0 … 1. Compares the
+      consonants from the end of the word: the last one counts most (same sound > same family > same
+      voicing > both humming/flowing), then the ones before it, then whether both have the same number
+      of consonants (an open ending vs. "-ixth" is far apart). liv / film beats liv / sixth. */
+  function endingLikeness(a, b) {
+    var ca = a.filter(notVowelToken), cb = b.filter(notVowelToken);
+    if (!ca.length && !cb.length) return 1;
+    if (!ca.length || !cb.length) return 0.25;
+    var pair = function (x, y) {
+      if (x === y) return 1;
+      if (sameFamily(x, y)) return 0.8;
+      if (sameVoicing(x, y)) return 0.6;
+      if (SONORANT[x] && SONORANT[y]) return 0.5;
+      return 0.15;
+    };
+    var n = Math.min(ca.length, cb.length), last = pair(ca[ca.length - 1], cb[cb.length - 1]), rest = 0;
+    for (var k = 2; k <= n; k++) rest += pair(ca[ca.length - k], cb[cb.length - k]);
+    var sounds = n > 1 ? 0.7 * last + 0.3 * rest / (n - 1) : last;
+    var shape = 1 - Math.abs(ca.length - cb.length) / Math.max(ca.length, cb.length);
+    return 0.65 * sounds + 0.35 * shape;
+  }
+  function notVowelToken(t) { return !isVowelToken(t); }
   // Grammar words (and filler sounds): only their usual pronunciation counts for rhyming ("says" isn't
   // "siz"). They're ranked like any other word: me, you, did, do… are classic line endings.
   var GRAMMAR_WORDS = {};
@@ -281,7 +305,14 @@
       if (t < 0 || t > strictness) continue;
       if (sc === 1.4 && dict.words[j].indexOf("'") >= 0) continue;   // "we've" for "me": just the word plus a contraction
       var w = dict.words[j];
-      found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, score: 0.65 * usability(dict, j) + 0.35 * CLOSENESS[sc] });
+      var score;
+      if (t === 2) {
+        // Vowel rhymes: how alike the endings sound matters as much as how common the word is.
+        var like = 0;
+        mine.forEach(function (a) { dict.tails[j].forEach(function (b) { if (compareTails(a, b) === 2) like = Math.max(like, endingLikeness(a, b)); }); });
+        score = 0.3 * usability(dict, j) + 0.55 * like;
+      } else score = 0.65 * usability(dict, j) + 0.35 * CLOSENESS[sc];
+      found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, score: score });
     }
     found.sort(function (x, y) { return y.score - x.score; });
     return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
