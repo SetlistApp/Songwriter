@@ -463,7 +463,8 @@
   display: block; background: transparent; color: var(--sw-text); resize: none; outline: none; overflow: hidden; min-height: 104px;
   -webkit-user-select: text; user-select: text;
 }
-.sw-mirror { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+.sw-ta { position: relative; z-index: 1; }   /* typing box on top… */
+.sw-mirror { position: absolute; left: 0; top: 0; z-index: 0; color: transparent; pointer-events: none; user-select: none; }   /* …its copy underneath draws only the rhyme underlines */
 .sw-gutter { position: absolute; right: 0; top: 0; width: 52px; pointer-events: none; }
 .sw-gl { position: absolute; right: 0; display: flex; align-items: center; height: 25.6px; margin-top: 2px; }
 .sw-done {

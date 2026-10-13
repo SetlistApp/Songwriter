@@ -376,14 +376,20 @@
       if (title && document.activeElement !== title) title.value = song.title || '';
     }
 
-    /** Line counts and rhyme letters next to the textarea, lined up with each line even when it wraps. */
+    /** Line counts and rhyme letters next to the textarea, lined up with each line even when it wraps.
+        The mirror is a copy of the text behind the textarea, laid out the same way: its letters are
+        invisible, but it draws the colored rhyme underlines, which show through under what you type. */
     function updateGutter(ta) {
       var id = ta.dataset.body, wrap = ta.parentNode, mirror = wrap.querySelector('.sw-mirror'), gutter = wrap.querySelector('[data-gutter]');
       var lines = ta.value.split('\n');
-      mirror.innerHTML = lines.map(function (l) { return `<div>${esc(l) || '&#8203;'}</div>`; }).join('');
+      var dict = ctx.dict(), sch = dict ? R.rhymeScheme(dict, lines, secs[id] && secs[id].rhyme_letters) : null;
+      mirror.innerHTML = lines.map(function (l, i) {
+        var info = sch && sch.lines[i], at = info && info.letter && info.word ? l.lastIndexOf(info.word) : -1;
+        if (at < 0) return `<div>${esc(l) || '&#8203;'}</div>`;
+        return `<div>${esc(l.slice(0, at))}<span class="sw-u ${kindClass(info)}">${esc(info.word)}</span>${esc(l.slice(at + info.word.length))}</div>`;
+      }).join('');
       ta.style.height = 'auto';
       ta.style.height = Math.max(ta.scrollHeight, mirror.offsetHeight + 4) + 'px';
-      var dict = ctx.dict(), sch = dict ? R.rhymeScheme(dict, lines, secs[id] && secs[id].rhyme_letters) : null;
       var tops = [].map.call(mirror.children, function (d) { return d.offsetTop; });
       gutter.innerHTML = lines.map(function (l, i) {
         if (!l.trim() || !sch) return '';
