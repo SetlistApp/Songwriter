@@ -204,19 +204,18 @@
   // ---------- Offline thesaurus (thesaurus.js) ----------
   /** Turns SW.THESAURUS into something fast to look up. Meanings are unpacked when first asked for. */
   function loadThesaurus(th) {
-    var words = th.words.split('|'), heads = Object.create(null), picks = Object.create(null), forms = Object.create(null);
+    var words = th.words.split('|'), heads = Object.create(null), forms = Object.create(null);
     var id = function (s) { return parseInt(s, 36); };
-    var wordList = function (s) { return s ? s.split(',').map(function (x) { return words[id(x)]; }) : []; };
     th.heads.split('|').forEach(function (h) {
-      var p = h.split(':'), w = words[id(p[0])];
-      heads[w] = p[1].split(',').map(id);
-      picks[w] = { synonyms: wordList(p[2]), antonyms: wordList(p[3]) };
+      var p = h.split(':');
+      // Each meaning: "number" or "number.usage count" (base 36)
+      heads[words[id(p[0])]] = p[1].split(',').map(function (m) { var x = m.split('.'); return { sense: id(x[0]), used: x[1] ? id(x[1]) : 0 }; });
     });
     th.forms.split('|').forEach(function (f) {
       var p = f.split('>');
       if (p[1]) forms[p[0]] = words[id(p[1])];
     });
-    return { words: words, senses: th.senses.split('\n'), heads: heads, picks: picks, forms: forms };
+    return { words: words, senses: th.senses.split('\n'), heads: heads, forms: forms };
   }
 
   /** The plain form of what was typed, if the thesaurus has it: "stopped" → stop, "running" → run,
@@ -253,11 +252,36 @@
       .map(function (o) { return o.w; });
   }
 
-  var TOP_PICKS = 12;
+  /** How everyday a word is, 0 (rare) … 1 (most common). A phrase counts as its rarest word, a bit less. */
+  function commonness(dict, w) {
+    var n = dict.words.length;
+    if (w in dict.index) return 1 - dict.index[w] / n;
+    var parts = w.split(' ');
+    if (parts.length > 1 && parts.every(function (p) { return p in dict.index; })) {
+      return 0.7 * (1 - Math.max.apply(null, parts.map(function (p) { return dict.index[p]; })) / n);
+    }
+    return 0;
+  }
+
+  /** Every word from every meaning in one list, best first: words from often-used meanings that are
+      everyday words come first ("stop": halt, quit, end, cease…); rare words last. Each word once. */
+  function bestOf(dict, groups, key) {
+    var score = {}, order = [];
+    groups.forEach(function (g) {
+      g[key].forEach(function (w) {
+        if (!(w in score)) { score[w] = 0; order.push(w); }
+        var c = commonness(dict, w);
+        score[w] += Math.log2(g.used + 2) * c * c;
+      });
+    });
+    return order.map(function (w, i) { return { w: w, s: score[w], i: i }; })
+      .sort(function (a, b) { return b.s - a.s || a.i - b.i; })
+      .map(function (o) { return o.w; });
+  }
 
   /** A word's meanings, most useful first:
-      { base, top: { synonyms, antonyms }, groups: [{ word, pos, gloss, synonyms, antonyms }] }.
-      top = the best everyday words across all meanings ("stop": halt, quit, end, cease…).
+      { base, best: { synonyms, antonyms }, groups: [{ word, pos, gloss, used, synonyms, antonyms }] }.
+      best = all of them in one list, best first (see bestOf).
       "running" gives its own meanings ("running water") and then run's. Inside each group, common
       words come first, then phrases, then rare words. null if the thesaurus doesn't know it. */
   function meanings(th, dict, word) {
@@ -270,22 +294,16 @@
     var list = function (s) { return s ? s.split(',').map(function (x) { return th.words[parseInt(x, 36)]; }) : []; };
     var groups = [];
     owners.forEach(function (owner) {
-      th.heads[owner].forEach(function (i) {
-        var parts = th.senses[i].split('\t');
+      th.heads[owner].forEach(function (m) {
+        var parts = th.senses[m.sense].split('\t');
         groups.push({
-          word: owner, pos: name[parts[0][0]], gloss: parts[0].slice(1),
+          word: owner, pos: name[parts[0][0]], gloss: parts[0].slice(1), used: m.used,
           synonyms: byCommon(dict, list(parts[1]).filter(function (w) { return w !== owner && w !== typed; })),
           antonyms: byCommon(dict, list(parts[2]))
         });
       });
     });
-    // "Most common" picks were worked out by build-thesaurus.js (usage counts + how common each word is).
-    var top = function (key) {
-      var out = [];
-      owners.forEach(function (o) { th.picks[o][key].forEach(function (w) { if (w !== typed && out.indexOf(w) < 0) out.push(w); }); });
-      return out.slice(0, TOP_PICKS);
-    };
-    return { base: base || typed, top: { synonyms: top('synonyms'), antonyms: top('antonyms') }, groups: groups };
+    return { base: base || typed, best: { synonyms: bestOf(dict, groups, 'synonyms'), antonyms: bestOf(dict, groups, 'antonyms') }, groups: groups };
   }
 
   SW.rhymes = {

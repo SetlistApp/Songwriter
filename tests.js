@@ -216,7 +216,11 @@
     check('Thesaurus: "running" shows its own meanings, then run\'s', (function (m) { return [m.groups[0].word, m.groups[m.groups.length - 1].word]; })(R.meanings(TH, D, 'running')), ['running', 'run']);
     check('Thesaurus: happy ↔ unhappy', R.meanings(TH, D, 'happy').groups[0].antonyms.indexOf('unhappy') >= 0, true);
     check('Thesaurus: unknown word gives null', R.meanings(TH, D, 'skrrt'), null);
-    check('Thesaurus: "most common" picks for stop include end and quit', ['end', 'quit'].every(function (w) { return stopM.top.synonyms.indexOf(w) >= 0; }), true);
+    var best = stopM.best.synonyms;
+    check('One list: stop\'s top 15 include halt, quit, cease, end', ['halt', 'quit', 'cease', 'end'].every(function (w) { var i = best.indexOf(w); return i >= 0 && i < 15; }), true);
+    check('One list: each word once', best.length === new Set(best).size, true);
+    check('One list: rare words last (kibosh after end)', best.indexOf('kibosh') > best.indexOf('end'), true);
+    check('One list: antonyms for stop start with start', stopM.best.antonyms[0], 'start');
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;

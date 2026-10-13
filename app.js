@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta7';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta8';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -23,7 +23,8 @@
     'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
     'Just the vowel sounds match.'
   ];
-  const SHOW_SYNONYMS = 40;   // extra online words: common ones; rare ones are all listed after them
+  const SHOW_SYNONYMS = 40;
+  const FIRST_MEANINGS = 4;   // meaning groups shown before "Show more meanings"   // extra online words: common ones; rare ones are all listed after them
 
   function mount(el) {
     const state = {
@@ -454,42 +455,26 @@
         <div data-wbody>${rhymeBody()}</div>`;
     }
 
-    /** Synonyms or antonyms: the offline thesaurus grouped by meaning, then extra words from Datamuse. */
+    /** Synonyms or antonyms: one list, best first. Offline thesaurus words (common ones and phrases),
+        then extra words from Datamuse when online, then rare words. */
     function wordsTab(kind) {
       needThesaurus();
       if (dictState !== 'ready' || thState !== 'ready') return '<div class="sw-wempty">Loading the thesaurus…</div>';
       const typed = R.clean(state.word), m = R.meanings(th, dict, state.word);
       const name = kind === 'syn' ? 'synonyms' : 'antonyms';
-      const shown = new Set([typed, m && m.base]);
-      let html = '';
-      if (m) {
-        if (m.base !== typed) html += `<div class="sw-whelp">Including meanings of <b>${esc(m.base)}</b>.</div>`;
-        const picks = kind === 'syn' ? m.top.synonyms : m.top.antonyms;
-        const groupCount = m.groups.filter((g) => (kind === 'syn' ? g.synonyms : g.antonyms).length).length;
-        if (picks.length > 2 && groupCount > 1) {
-          html += `<div class="sw-mean"><div class="sw-sub">Most common · any meaning</div>${wordButtons(picks)}</div><div class="sw-sub sw-bymean">By meaning</div>`;
-        }
-        html += m.groups.filter((g) => (kind === 'syn' ? g.synonyms : g.antonyms).length).map((g) => {
-          const list = kind === 'syn' ? g.synonyms : g.antonyms;
-          list.forEach((w) => shown.add(w));
-          const label = `${g.word !== typed ? `${esc(g.word)} · ` : ''}${g.pos}`;
-          return `<div class="sw-mean"><div class="sw-meanh"><span>${label}</span>${esc(g.gloss)}</div>${wordButtons(list)}</div>`;
-        }).join('');
-      }
-      if (!html) html = `<div class="sw-wempty">No ${name} in the offline thesaurus.</div>`;
-
+      const offline = m ? (kind === 'syn' ? m.best.synonyms : m.best.antonyms) : [];
+      const isRare = (w) => !w.split(' ').every((p) => R.find(dict, p) >= 0);
+      const shown = new Set([typed, m && m.base].concat(offline));
       const got = dmCache[`${kind}:${state.word}`];
-      let more;
-      if (!got || got.status === 'loading') more = '<div class="sw-wnote">Looking for more online…</div>';
-      else if (got.status === 'error') {
-        more = navigator.onLine === false
-          ? '<div class="sw-wnote">Connect to the internet for more related words.</div>'
-          : '<div class="sw-wnote">Couldn’t reach the online word service. <button class="sw-link" data-act="word-retry">Try again</button></div>';
-      } else {
-        const extra = got.words.filter((w) => !shown.has(w));
-        more = extra.length ? `<div class="sw-mean"><div class="sw-sub">More ${kind === 'syn' ? 'related words' : 'opposites'} · online</div>${wordButtons(extra)}</div>` : '';
-      }
-      return html + more + '<div class="sw-wnote">Grouped by meaning, from WordNet (works offline). Common words first, rare ones last.</div>';
+      const online = got && got.status === 'ok' ? got.words.filter((w) => !shown.has(w)) : [];
+      const list = offline.filter((w) => !isRare(w)).concat(online, offline.filter(isRare));
+
+      let html = m && m.base !== typed ? `<div class="sw-whelp">Including words for <b>${esc(m.base)}</b>.</div>` : '';
+      html += list.length ? wordButtons(list) : `<div class="sw-wempty">No ${name} found.</div>`;
+      let note = 'Best first: everyday words and common meanings, rare words last. Works offline.';
+      if (!got || got.status === 'loading') note += ' Looking for more online…';
+      else if (got.status === 'error') note += navigator.onLine === false ? ' Connect to the internet for a few more.' : ' <button class="sw-link" data-act="word-retry">Try online again</button>';
+      return `<div class="sw-wlist">${html}</div><div class="sw-wnote">${note}</div>`;
     }
 
     function wordSheet() {
