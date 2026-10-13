@@ -229,6 +229,16 @@
     check('Vulgar: stop hides nothing', stopM.best.synonyms.hidden, []);
     check('Vulgar: a vulgar search shows everything', (function (m) { return [m.vulgarSearch, m.best.synonyms.hidden.length]; })(R.meanings(TH, D, 'fuck')), [true, 0]);
     check('Vulgar: swear words are known even outside WordNet labels', [R.isVulgar(TH, 'shit'), R.isVulgar(TH, 'stop')], [true, false]);
+    // --- Definitions (definitions.js) ---
+    var DF = R.loadDefinitions(SW.DEFINITIONS);
+    var loveD = R.definitions(DF, TH, 'love');
+    check('Definitions: love\'s first meaning is the everyday one, with an example', [loveD[0].pos, loveD[0].def, !!loveD[0].example], ['verb', 'have a great affection or liking for', true]);
+    check('Definitions: at most 4 meanings per word', loveD.length <= 4, true);
+    var stopD = R.definitions(DF, TH, 'stop');
+    check('Definitions: stop starts with "come to a halt"', /come to a halt/.test(stopD[0].def), true);
+    check('Definitions: word forms find their base (stopped → stop\'s meanings too)', R.definitions(DF, TH, 'stopped').some(function (d) { return d.word === 'stop'; }), true);
+    check('Definitions: examples have no quote marks', stopD.every(function (d) { return d.example.indexOf('"') < 0; }), true);
+    check('Definitions: unknown word gives null', R.definitions(DF, TH, 'skrrt'), null);
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;
@@ -239,6 +249,7 @@
     require('./theory.js');
     require('./words.js');
     require('./thesaurus.js');
+    require('./definitions.js');
     require('./rhymes.js');
     var results = SW.runTests(), failed = results.filter(function (r) { return !r.ok; });
     failed.forEach(function (r) { console.log('FAIL  ' + r.name + '\n      got:  ' + JSON.stringify(r.got) + '\n      want: ' + JSON.stringify(r.want)); });

@@ -230,7 +230,8 @@
 
   /** The plain form of what was typed, if the thesaurus has it: "stopped" → stop, "running" → run,
       "went" → go. Returns the word itself if it's already plain, null if unknown. */
-  function baseWord(th, word) {
+  function baseWord(th, word, has) {
+    has = has || function (x) { return !!th.heads[x]; };
     var w = clean(word);
     if (th.forms[w]) return th.forms[w];
     var rules = [['ies', 'y'], ['ied', 'y'], ['ier', 'y'], ['iest', 'y'], ['es', ''], ['s', ''], ['ed', ''], ['ed', 'e'],
@@ -239,11 +240,39 @@
       var end = rules[i][0];
       if (w.length <= end.length + 1 || w.slice(-end.length) !== end) continue;
       var stem = w.slice(0, -end.length);
-      if (th.heads[stem + rules[i][1]]) return stem + rules[i][1];
+      if (has(stem + rules[i][1])) return stem + rules[i][1];
       // stopped → stop, running → run
-      if (stem.length > 2 && stem[stem.length - 1] === stem[stem.length - 2] && th.heads[stem.slice(0, -1)]) return stem.slice(0, -1);
+      if (stem.length > 2 && stem[stem.length - 1] === stem[stem.length - 2] && has(stem.slice(0, -1))) return stem.slice(0, -1);
     }
-    return th.heads[w] ? w : null;
+    return has(w) ? w : null;
+  }
+
+  // ---------- Definitions (definitions.js) ----------
+  function loadDefinitions(d) {
+    var words = Object.create(null);
+    d.words.split('|').forEach(function (e) {
+      var p = e.split(':');
+      words[p[0]] = p[1].split(',').map(function (x) { return parseInt(x, 36); });
+    });
+    return { texts: d.texts.split('\n'), words: words };
+  }
+
+  /** A word's definitions, most used meaning first: [{ word, pos, def, example }].
+      "running" gives its own and then run's (word forms come from the thesaurus). null if unknown. */
+  function definitions(defs, th, word) {
+    var typed = clean(word), has = function (x) { return !!defs.words[x]; };
+    var base = baseWord(th, word, has), owners = [];
+    if (has(typed)) owners.push(typed);
+    if (base && base !== typed) owners.push(base);
+    if (!owners.length) return null;
+    var name = { n: 'noun', v: 'verb', a: 'adjective', r: 'adverb' }, out = [];
+    owners.forEach(function (o) {
+      defs.words[o].forEach(function (i) {
+        var parts = defs.texts[i].split('\t');
+        out.push({ word: o, pos: name[parts[0][0]], def: parts[0].slice(1), example: parts[1] || '' });
+      });
+    });
+    return out;
   }
 
   /** How common a word is, for sorting: its place in the word list (0 = most common).
@@ -338,6 +367,6 @@
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
-    loadThesaurus: loadThesaurus, baseWord: baseWord, meanings: meanings, isVulgar: isVulgar, band: band
+    loadThesaurus: loadThesaurus, baseWord: baseWord, loadDefinitions: loadDefinitions, definitions: definitions, meanings: meanings, isVulgar: isVulgar, band: band
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -12,10 +12,11 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta9';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta10';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
+  const DEFINITIONS_URL = 'definitions.js';   // meanings with examples (~2.7 MB), loaded the first time Meaning opens
   const THESAURUS_URL = 'thesaurus.js';   // synonyms & antonyms by meaning (~1.8 MB), loaded the first time they're asked for
   const DATAMUSE = 'https://api.datamuse.com/words';   // extra related words (needs internet)
   const STRICT_HELP = [
@@ -47,7 +48,7 @@
       lyRecent: [],          // words looked up this visit, newest first
       word: null,            // word shown in the word sheet
       wordTrail: [],         // words looked up before it from inside the sheet (for ‹ Back)
-      wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant'
+      wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant' | 'def'
       strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel
       showHidden: false,     // Synonyms/Antonyms: vulgar words shown at the bottom
       // Voice leading
@@ -71,6 +72,8 @@
     let dictState = 'idle';   // 'idle' | 'loading' | 'ready'
     let th = null;            // the offline thesaurus, once thesaurus.js has loaded
     let thState = 'idle';
+    let defs = null;          // definitions, once definitions.js has loaded
+    let defState = 'idle';
     const dmCache = {};       // Datamuse answers: { 'syn:stop': { status, words } }
 
     // ---------- Small helpers ----------
@@ -383,6 +386,13 @@
       loadScript(THESAURUS_URL, () => { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; render(); }, () => { thState = 'idle'; render(); });
     }
 
+    function needDefinitions() {
+      if (defState !== 'idle') return;
+      if (SW.DEFINITIONS) { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; return; }
+      defState = 'loading';
+      loadScript(DEFINITIONS_URL, () => { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; render(); }, () => { defState = 'idle'; render(); });
+    }
+
     function lyricsPage() {
       needWords();
       const recent = state.lyRecent.length
@@ -408,7 +418,7 @@
       state.showHidden = false;
       state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
       needWords();
-      if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, w);
+      if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, w);
     }
 
     /** Extra related words or opposites from Datamuse, sorted best first (SW.rhymes ranks them).
@@ -419,6 +429,14 @@
       dmCache[key] = { status: 'loading', words: [] };
       const ask = (query) => fetch(`${DATAMUSE}?${query}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
       const w = encodeURIComponent(word);
+      // Meaning: Datamuse's definitions, only asked for when the offline dictionary doesn't know the word.
+      if (kind === 'def') {
+        ask(`sp=${w}&md=d&max=1`).then((r) => r[0] && r[0].word === word ? (r[0].defs || []) : [])
+          .then((list) => { dmCache[key] = { status: 'ok', words: list.map((d) => ({ pos: { n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb' }[d.split('\t')[0]] || '', def: d.split('\t')[1] || d })) }; })
+          .catch(() => { dmCache[key] = { status: 'error', words: [] }; })
+          .then(() => { if (state.sheet === 'word' && state.word === word && state.wordTab === kind) render(); });
+        return;
+      }
       const done = kind === 'syn'
         ? Promise.all([ask(`sp=${w}&md=p&max=1`), ask(`rel_syn=${w}&md=fp&max=100`), ask(`ml=${w}&md=fp&max=150`)])
           .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related, SHOW_SYNONYMS))
@@ -488,18 +506,45 @@
       return `<div class="sw-wlist">${html}</div><div class="sw-wnote">${note}</div>`;
     }
 
+    /** Meaning: the word's definitions, most used first, each with an example. Offline; words the
+        dictionary doesn't know ask Datamuse when online. */
+    function meaningTab() {
+      needThesaurus();
+      needDefinitions();
+      if (thState !== 'ready' || defState !== 'ready') return '<div class="sw-wempty">Loading the dictionary…</div>';
+      const typed = R.clean(state.word);
+      let list = R.definitions(defs, th, state.word), from = '';
+      if (!list) {
+        const got = dmCache[`def:${state.word}`];
+        if (!got) { fetchWords('def', state.word); return '<div class="sw-wempty">Looking it up online…</div>'; }
+        if (got.status === 'loading') return '<div class="sw-wempty">Looking it up online…</div>';
+        if (got.status === 'error' || !got.words.length) {
+          return `<div class="sw-wempty">“${esc(state.word)}” isn’t in the offline dictionary${got.status === 'error' ? (navigator.onLine === false ? ', and you’re offline.' : '. <button class="sw-link" data-act="word-retry">Try online again</button>') : ', and none was found online.'}</div>`;
+        }
+        list = got.words;
+        from = '<div class="sw-wnote">From Datamuse (online).</div>';
+      }
+      const owners = [...new Set(list.map((d) => d.word).filter(Boolean))];
+      const note = owners.length > 1 || (owners[0] && owners[0] !== typed) ? `<div class="sw-whelp">Including meanings of <b>${esc(owners[owners.length - 1])}</b>.</div>` : '';
+      return `<div class="sw-defs">${note}${list.map((d) => `<div class="sw-def">
+          <div class="sw-defh">${d.word && d.word !== typed ? `${esc(d.word)} · ` : ''}${d.pos}</div>
+          <div class="sw-deft">${esc(d.def)}</div>
+          ${d.example ? `<div class="sw-defx">“${esc(d.example)}”</div>` : ''}
+        </div>`).join('')}</div>${from}`;
+    }
+
     function wordSheet() {
       const syl = dictState === 'ready' ? R.syllables(dict, state.word) : 0;
       const back = state.wordTrail.length
         ? `<button class="sw-wback" data-act="word-back">‹ ${esc(state.wordTrail[state.wordTrail.length - 1])}</button>` : '';
-      const body = state.wordTab === 'rhymes' ? rhymesTab() : wordsTab(state.wordTab);
+      const body = state.wordTab === 'rhymes' ? rhymesTab() : state.wordTab === 'def' ? meaningTab() : wordsTab(state.wordTab);
       return `<div class="sw-dimmer" data-act="close-sheet"></div>
         <div class="sw-sheet sw-wsheet">
           <div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div>
             ${back}
             <div class="sw-whead"><b class="sw-keepcase">${esc(state.word)}</b>${syl ? `<span>${syl} syllable${syl > 1 ? 's' : ''}</span>` : ''}<button class="sw-x" data-act="close-sheet" aria-label="Close">✕</button></div>
           </div>
-          ${seg('word-tab', [['rhymes', 'Rhymes'], ['syn', 'Synonyms'], ['ant', 'Antonyms']], state.wordTab, 'sw-wide')}
+          ${seg('word-tab', [['rhymes', 'Rhymes'], ['syn', 'Synonyms'], ['ant', 'Antonyms'], ['def', 'Meaning']], state.wordTab, 'sw-wide sw-4tabs')}
           ${body}
         </div>`;
     }
@@ -652,10 +697,10 @@
         case 'lookup': lookup(arg, false); break;
         case 'word-pick': lookup(arg, true); break;
         case 'show-hidden': state.showHidden = true; break;
-        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, state.word); break;
+        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
-          if (arg !== 'rhymes') fetchWords(arg, state.word);
+          if (arg === 'syn' || arg === 'ant') fetchWords(arg, state.word);
           break;
         case 'word-retry': fetchWords(state.wordTab, state.word); break;
         case 'strict': state.strict = +arg; break;
