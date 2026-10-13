@@ -90,13 +90,18 @@
   /** The vowels of a tail, with close ones counted as one (each looks at the sound after it). */
   var nearVowels = function (t) { return t.map(function (p, i) { return isVowelToken(p) ? nearVowel(p, t[i + 1]) : null; }).filter(function (v) { return v; }); };
   var sameFamily = function (a, b) { return a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]); };
+  // Looser cousins: same voicing across stop/hiss groups. Voiced (your voice buzzes): b d g + v z th j;
+  // voiceless (just air): p t k + f s sh ch. So liv / did, lot / loss.
+  var VOICING = { B: 'v', D: 'v', G: 'v', V: 'v', DH: 'v', Z: 'v', ZH: 'v', JH: 'v', P: 'u', T: 'u', K: 'u', F: 'u', TH: 'u', S: 'u', SH: 'u', CH: 'u' };
+  var sameVoicing = function (a, b) { return !!VOICING[a] && VOICING[a] === VOICING[b]; };
 
   // Soft (voiced) sounds that can be added after an open vowel and still feel like a family rhyme:
   // day / rain, me / seen, go / home. (day / date, with a hard T, stays a vowel rhyme.)
   var SOFT_ADD = { M: 1, N: 1, NG: 1, D: 1, B: 1, G: 1, L: 1, Z: 1, V: 1 };
 
   /** How closely two tails rhyme, as a score: 0 perfect; 1 family (same vowel, cousin sounds),
-      1.3 family with close vowels (thing / mean), 1.4 family by an added soft sound (day / rain);
+      1.3 family with close vowels (thing / mean), 1.4 family by an added soft sound (day / rain),
+      1.5 family by voicing only (liv / did: both buzzy), 1.6 that plus close vowels;
       2 vowel, 2.3 vowel with close vowels; -1 not at all. Whole number = the kind (see compareTails);
       the fraction only decides which of two family rhymes is closer. */
   function tailScore(a, b) {
@@ -110,11 +115,13 @@
     var va = nearVowels(a), vb = nearVowels(b);
     var sameVowels = va.join() === vb.join();
     if (sameVowels && a.length === b.length) {
+      var byVoicing = false;
       for (i = 0; i < a.length; i++) {
         if (isVowelToken(a[i]) !== isVowelToken(b[i])) break;
-        if (isVowelToken(a[i]) ? nearVowel(a[i], a[i + 1]) !== nearVowel(b[i], b[i + 1]) : !sameFamily(a[i], b[i])) break;
+        if (isVowelToken(a[i])) { if (nearVowel(a[i], a[i + 1]) !== nearVowel(b[i], b[i + 1])) break; }
+        else if (!sameFamily(a[i], b[i])) { if (sameVoicing(a[i], b[i])) byVoicing = true; else break; }
       }
-      if (i === a.length) return exactVowels ? 1 : 1.3;
+      if (i === a.length) return byVoicing ? (exactVowels ? 1.5 : 1.6) : exactVowels ? 1 : 1.3;
     }
     if (sameVowels) return exactVowels ? 2 : 2.3;
     return -1;
@@ -160,9 +167,9 @@
   // Mostly how common the word is (everyday words first), names and odd words much lower, and a
   // little for how close it sounds, so a common family rhyme ("lot") can beat an obscure perfect
   // one ("plop"). The strictness slider still decides which kinds are listed.
-  var CLOSENESS = { 0: 1, 1: 0.75, 1.3: 0.65, 1.4: 0.6, 2: 0.4, 2.3: 0.3 };
-  // Grammar words: the most common words there are, and they sound close to lots of things, but a
-  // lyric line almost never lands on them. ("why", "high", "try" aren't here: those work.)
+  var CLOSENESS = { 0: 1, 1: 0.75, 1.3: 0.65, 1.4: 0.6, 1.5: 0.55, 1.6: 0.5, 2: 0.4, 2.3: 0.3 };
+  // Grammar words (and filler sounds): only their usual pronunciation counts for rhyming ("says" isn't
+  // "siz"). They're ranked like any other word: me, you, did, do… are classic line endings.
   var GRAMMAR_WORDS = {};
   ('a an the to of in on at by for with from into onto upon is am are was were be been being do does did ' +
     'has have had i me my mine you your yours he him his she her hers it its we us our ours they them their ' +
@@ -172,9 +179,7 @@
   function usability(dict, j) {
     var w = dict.words[j], u = 1 - Math.log(j + 1) / Math.log(dict.words.length + 1);   // most common word → 1
     if (!dict.real[j]) u *= 0.35;                                                       // names, foreign words, abbreviations
-    var base = w.split("'")[0];
-    if (GRAMMAR_WORDS[w]) u *= 0.4;                                                     // is, his, with…
-    else if (w.indexOf("'") >= 0) u *= GRAMMAR_WORDS[base] ? 0.35 : 0.9;                // I've, he's… vs. other contractions
+    if (w.indexOf("'") >= 0) u *= 0.9;                                                  // contractions, a little lower
     return u;
   }
 

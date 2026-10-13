@@ -187,6 +187,9 @@
       var liv = words(R.rhymes(D, 'live', 1, R.pronunciations(D, 'live')[1].pron));
       return ['to', 'does', 'says', 'is', 'his', 'with'].map(function (w) { return liv.indexOf(w) >= 0; });
     })(), [false, false, false, true, true, true]);
+    check('Voicing cousins: liv / did (both buzzy) and lot / loss (both airy) are family; liv / lift isn\'t', [R.rhymeType(D, 'did', 'give'), R.rhymeType(D, 'lot', 'loss'), R.rhymeType(D, 'give', 'lift') === 'family'], ['family', 'family', false]);
+    check('…ranked after the closer family rhymes (stop: lot before loss)', words(R.rhymes(D, 'stop', 1)).indexOf('lot') < words(R.rhymes(D, 'stop', 1)).indexOf('loss'), true);
+    check('No grammar-word penalty: did shows in the first 30 family rhymes for "liv"', words(R.rhymes(D, 'live', 1, R.pronunciations(D, 'live')[1].pron)).indexOf('did') < 30, true);
     check('Words said one way have no choice to make (stop)', R.pronunciations(D, 'stop'), []);
     check('Names are marked in the word list (george), everyday words aren\'t (something)', [D.real[D.index.george], D.real[D.index.something]], [false, true]);
     check('The word itself is left out', words(loose).indexOf('stop') < 0, true);

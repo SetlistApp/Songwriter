@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta27';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta28';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -21,7 +21,7 @@
   const DATAMUSE = 'https://api.datamuse.com/words';   // extra related words (needs internet)
   const STRICT_HELP = [
     'Same vowel and same ending sound.',
-    'Same or close vowel (thing / mean), and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j. Open endings can add a soft sound (day / rain, go / home).',
+    'Same or close vowel (thing / mean), and the ending sounds are cousins: p t k, b d g, m n ng, f s sh th ch, v z j; more loosely, any buzzy sounds (liv / did) or any airy ones (lot / loss). Open endings can add a soft sound (day / rain, go / home).',
     'Just the vowel sounds match.'
   ];
   // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
