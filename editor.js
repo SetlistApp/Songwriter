@@ -436,10 +436,15 @@
         <span class="sw-wbtns">${[['rhymes', 'Rhymes'], ['syn', 'Syn'], ['ant', 'Ant'], ['def', 'Meaning']].map(function (t) {
           return `<button data-act="ed-word" data-arg="${t[0]}">${t[1]}</button>`; }).join('')}<button class="sw-wletter" data-act="ed-pickword" aria-label="Give this word a rhyme letter">A·B</button></span>`;
     }
-    /** Keep the word bar just above the phone's keyboard. */
+    /** Where the word bar goes. With an on-screen keyboard open, at the top of what's visible: newer
+        iPhones float their own ^ ˅ ✓ bar just above the keyboard, which would cover it there (and a
+        page can't move or hide that bar). Without one (a laptop), at the bottom. */
     function placeBar(bar) {
       var vv = root.visualViewport;
-      bar.style.bottom = vv ? Math.max(0, root.innerHeight - vv.height - vv.offsetTop) + 'px' : '0px';
+      var keyboard = vv && vv.height < root.innerHeight * 0.8;   // the visible area shrank: a keyboard is up
+      bar.classList.toggle('sw-attop', !!keyboard);
+      if (keyboard) { bar.style.top = vv.offsetTop + 'px'; bar.style.bottom = 'auto'; }
+      else { bar.style.top = 'auto'; bar.style.bottom = vv ? Math.max(0, root.innerHeight - vv.height - vv.offsetTop) + 'px' : '0px'; }
     }
     if (root.visualViewport) {
       var onVV = function () { var bar = ctx.el.querySelector('[data-wordbar]'); if (bar && !bar.hidden) placeBar(bar); };

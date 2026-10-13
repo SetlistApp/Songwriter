@@ -487,6 +487,7 @@
   padding: 8px 12px; background: var(--sw-raised); border-top: 1px solid var(--sw-line);
 }
 .sw-wordbar[hidden] { display: none; }
+.sw-wordbar.sw-attop { border-top: 0; border-bottom: 1px solid var(--sw-line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
 .sw-wordbar b { font-family: var(--sw-display); font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sw-wordbar small { font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); white-space: nowrap; }
 .sw-wbtns { margin-left: auto; display: flex; gap: 5px; flex-shrink: 0; }
