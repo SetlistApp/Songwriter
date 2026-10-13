@@ -66,9 +66,11 @@
 
   /** The rhyme part, ready to compare. Quiet "uh" and "ih" sound alike, so they count as one sound. */
   function tail(phones) {
-    return phones.slice(tailStart(phones)).map(function (p, i) {
+    var part = phones.slice(tailStart(phones));
+    return part.map(function (p, i) {
       if (!isVowel(p)) return p;
       var v = p.slice(0, -1);
+      if ((v === 'IY' || v === 'IH') && part[i + 1] === 'R') v = 'IH';   // "ear" sound: here / fear are written differently but sound the same
       if (i > 0 && p[p.length - 1] === '0' && (v === 'AH' || v === 'IH')) return 'UH0';   // quiet "uh"
       return v;
     });
@@ -77,8 +79,16 @@
   // "cot" and "caught" sound the same to most American ears, so AA and AO match beyond Perfect.
   // Vowels that sound alike when sung count as one beyond Perfect: "cot"/"caught" (AA/AO), "ih"/"ee"
   // (thing/mean: "-ing" is usually sung "-een"), and "oo" as in good/food (UH/UW).
-  var CLOSE = { AO: 'AA', IY: 'IH', UW: 'UH' };
-  var nearVowel = function (v) { return CLOSE[v] || v; };
+  // "ih"/"ee" only blur right before m, n, ng (thing / mean, sin / seen, him / team) or r (fear / here,
+  // the dictionary writes those two differently); elsewhere they're clearly different (live / leave).
+  var CLOSE = { AO: 'AA', UW: 'UH' };
+  var NASAL = { M: 1, N: 1, NG: 1, R: 1 };
+  var nearVowel = function (v, next) {
+    if ((v === 'IY' || v === 'IH') && NASAL[next]) return 'IH';
+    return CLOSE[v] || v;
+  };
+  /** The vowels of a tail, with close ones counted as one (each looks at the sound after it). */
+  var nearVowels = function (t) { return t.map(function (p, i) { return isVowelToken(p) ? nearVowel(p, t[i + 1]) : null; }).filter(function (v) { return v; }); };
   var sameFamily = function (a, b) { return a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]); };
 
   // Soft (voiced) sounds that can be added after an open vowel and still feel like a family rhyme:
@@ -97,12 +107,12 @@
     var longer = a.length > b.length ? a : b, shorter = longer === a ? b : a;
     if (longer.length === shorter.length + 1 && isVowelToken(shorter[shorter.length - 1]) && SOFT_ADD[longer[longer.length - 1]] &&
         longer.slice(0, -1).join() === shorter.join()) return 1.4;
-    var va = a.filter(isVowelToken).map(nearVowel), vb = b.filter(isVowelToken).map(nearVowel);
+    var va = nearVowels(a), vb = nearVowels(b);
     var sameVowels = va.join() === vb.join();
     if (sameVowels && a.length === b.length) {
       for (i = 0; i < a.length; i++) {
         if (isVowelToken(a[i]) !== isVowelToken(b[i])) break;
-        if (isVowelToken(a[i]) ? nearVowel(a[i]) !== nearVowel(b[i]) : !sameFamily(a[i], b[i])) break;
+        if (isVowelToken(a[i]) ? nearVowel(a[i], a[i + 1]) !== nearVowel(b[i], b[i + 1]) : !sameFamily(a[i], b[i])) break;
       }
       if (i === a.length) return exactVowels ? 1 : 1.3;
     }

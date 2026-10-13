@@ -240,6 +240,8 @@
     check('Lines: a letter needs two lines (AA·, not AAB)', R.rhymeScheme(D, ['I saw the light', 'it felt so right', 'and then the rain']).scheme, 'AA·');
     check('Lines: blank lines are skipped in the scheme', R.rhymeScheme(D, ['the night', '', 'so bright']).scheme, 'AA');
     check('Lines: same last word counts as a rhyme', R.rhymeScheme(D, ['I love you', 'I need you']).scheme, 'AA');
+    check('"ih"/"ee" only blur before m, n, ng: live / leave, live / please, his / he\'s don\'t rhyme', [R.rhymeType(D, 'live', 'leave'), R.rhymeType(D, 'live', 'please'), R.rhymeType(D, 'his', "he's")], [null, null, null]);
+    check('…but him / team (before m) and fear / here (before r) still do', [R.rhymeType(D, 'him', 'team'), R.rhymeType(D, 'fear', 'here')], ['family', 'perfect']);
     check('Close vowels: thing / mean, sing / seen, good / food are near (family) rhymes', [R.rhymeType(D, 'thing', 'mean'), R.rhymeType(D, 'sing', 'seen'), R.rhymeType(D, 'good', 'food')], ['family', 'family', 'family']);
     check('Open endings + a soft sound are family: day / rain, me / seen, go / home', [R.rhymeType(D, 'day', 'rain'), R.rhymeType(D, 'me', 'seen'), R.rhymeType(D, 'go', 'home')], ['family', 'family', 'family']);
     check('…but a hard sound stays a vowel rhyme (day / date)', R.rhymeType(D, 'day', 'date'), 'vowel');
