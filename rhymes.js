@@ -34,7 +34,6 @@
   };
   var TYPES = ['perfect', 'family', 'vowel'];
   var STRICTNESS = ['Perfect', 'Family', 'Vowel'];
-  var MAX_PER_TYPE = 60;   // the most common 60 of each kind is plenty to scan on a phone
 
   var isVowel = function (p) { return /\d$/.test(p); };
 
@@ -155,8 +154,7 @@
       found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, rank: j });
     }
     found.sort(function (x, y) { return x.t - y.t || x.rank - y.rank; });
-    var perType = [0, 0, 0];
-    return found.filter(function (r) { return ++perType[r.t] <= MAX_PER_TYPE; }).map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
+    return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
   }
 
   // ---------- Synonyms & antonyms (Datamuse) ----------

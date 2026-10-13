@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta10';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta11';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -24,7 +24,8 @@
     'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
     'Just the vowel sounds match.'
   ];
-  const SHOW_SYNONYMS = 40;
+  // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
+  const FIRST = { rhymes: 80, syn: 40, ant: 40, def: 4 };
   const FIRST_MEANINGS = 4;   // meaning groups shown before "Show more meanings"   // extra online words: common ones; rare ones are all listed after them
 
   function mount(el) {
@@ -51,6 +52,7 @@
       wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant' | 'def'
       strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel
       showHidden: false,     // Synonyms/Antonyms: vulgar words shown at the bottom
+      showAll: {},           // word-sheet tabs showing everything, not just the first batch: { rhymes: true }
       // Voice leading
       vlNotes: 3,            // 3 or 4 notes per chord
       vlInv: true,           // allow inversions
@@ -416,6 +418,7 @@
       state.word = w;
       state.sheet = 'word';
       state.showHidden = false;
+      state.showAll = {};
       state.lyRecent = [w].concat(state.lyRecent.filter((x) => x !== w)).slice(0, 10);
       needWords();
       if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, w);
@@ -439,11 +442,17 @@
       }
       const done = kind === 'syn'
         ? Promise.all([ask(`sp=${w}&md=p&max=1`), ask(`rel_syn=${w}&md=fp&max=100`), ask(`ml=${w}&md=fp&max=150`)])
-          .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related, SHOW_SYNONYMS))
+          .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related))
         : ask(`rel_ant=${w}&md=f&max=50`).then((ants) => R.rankAntonyms(word, ants));
       done.then((words) => { dmCache[key] = { status: 'ok', words }; })
         .catch(() => { dmCache[key] = { status: 'error', words: [] }; })
         .then(() => { if (state.sheet === 'word' && state.word === word && state.wordTab === kind) render(); });
+    }
+
+    /** The first batch of a list for a tab, plus a "Show N more" button if there's more. */
+    function firstBatch(tab, list) {
+      const n = FIRST[tab], hidden = state.showAll[tab] ? 0 : Math.max(0, list.length - n);
+      return { list: hidden ? list.slice(0, n) : list, more: hidden ? `<button class="sw-moremean sw-gold" data-act="show-all" data-arg="${tab}">Show ${hidden} more</button>` : '' };
     }
 
     const wordButtons = (list, cls = () => '') => `<div class="sw-words">${list.map((w) =>
@@ -451,7 +460,8 @@
 
     /** The rhyme list for the current strictness: help line, then results grouped by syllables. */
     function rhymeBody() {
-      const list = R.rhymes(dict, state.word, state.strict);
+      const all = R.rhymes(dict, state.word, state.strict);
+      const { list, more } = firstBatch('rhymes', all);
       const help = `<div class="sw-whelp"><b>${R.STRICTNESS[state.strict]}:</b> ${STRICT_HELP[state.strict]}</div>`;
       if (!list.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
       const bySyl = {};
@@ -460,7 +470,7 @@
         `<div class="sw-sub">${n} syllable${n > 1 ? 's' : ''}</div>${wordButtons(bySyl[n], (r) => `sw-t-${r.type}`)}`).join('');
       const kinds = R.TYPES.slice(0, state.strict + 1);
       const key = kinds.length > 1 ? `<div class="sw-wkey">${kinds.map((k) => `<span><i class="sw-t-${k}"></i>${k}</span>`).join('')}<span>closest first</span></div>` : '';
-      return help + groups + key;
+      return help + groups + more + key;
     }
 
     function rhymesTab() {
@@ -494,7 +504,8 @@
       const list = [0, 1, 2, 3].flatMap((b) => best.words.filter((x) => x.band === b).concat(extra.filter((x) => x.band === b))).map((x) => x.word);
 
       let html = m && m.base !== typed ? `<div class="sw-whelp">Including words for <b>${esc(m.base)}</b>.</div>` : '';
-      html += list.length ? wordButtons(list) : `<div class="sw-wempty">No ${name} found.</div>`;
+      const batch = firstBatch(kind, list);
+      html += list.length ? wordButtons(batch.list) + batch.more : `<div class="sw-wempty">No ${name} found.</div>`;
       if (hidden.length) {
         html += state.showHidden
           ? `<div class="sw-sub">Vulgar</div>${wordButtons(hidden)}`
@@ -525,12 +536,13 @@
         from = '<div class="sw-wnote">From Datamuse (online).</div>';
       }
       const owners = [...new Set(list.map((d) => d.word).filter(Boolean))];
+      const batch = firstBatch('def', list);
       const note = owners.length > 1 || (owners[0] && owners[0] !== typed) ? `<div class="sw-whelp">Including meanings of <b>${esc(owners[owners.length - 1])}</b>.</div>` : '';
-      return `<div class="sw-defs">${note}${list.map((d) => `<div class="sw-def">
+      return `<div class="sw-defs">${note}${batch.list.map((d) => `<div class="sw-def">
           <div class="sw-defh">${d.word && d.word !== typed ? `${esc(d.word)} · ` : ''}${d.pos}</div>
           <div class="sw-deft">${esc(d.def)}</div>
           ${d.example ? `<div class="sw-defx">“${esc(d.example)}”</div>` : ''}
-        </div>`).join('')}</div>${from}`;
+        </div>`).join('')}</div>${batch.more}${from}`;
     }
 
     function wordSheet() {
@@ -697,7 +709,8 @@
         case 'lookup': lookup(arg, false); break;
         case 'word-pick': lookup(arg, true); break;
         case 'show-hidden': state.showHidden = true; break;
-        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
+        case 'show-all': state.showAll[arg] = true; break;
+        case 'word-back': state.word = state.wordTrail.pop(); state.showHidden = false; state.showAll = {}; if (state.wordTab === 'syn' || state.wordTab === 'ant') fetchWords(state.wordTab, state.word); break;
         case 'word-tab':
           state.wordTab = arg;
           if (arg === 'syn' || arg === 'ant') fetchWords(arg, state.word);

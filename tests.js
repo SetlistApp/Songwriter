@@ -233,7 +233,7 @@
     var DF = R.loadDefinitions(SW.DEFINITIONS);
     var loveD = R.definitions(DF, TH, 'love');
     check('Definitions: love\'s first meaning is the everyday one, with an example', [loveD[0].pos, loveD[0].def, !!loveD[0].example], ['verb', 'have a great affection or liking for', true]);
-    check('Definitions: at most 4 meanings per word', loveD.length <= 4, true);
+    check('Definitions: every meaning is kept (the app shows 4, then Show more)', loveD.length > 4, true);
     var stopD = R.definitions(DF, TH, 'stop');
     check('Definitions: stop starts with "come to a halt"', /come to a halt/.test(stopD[0].def), true);
     check('Definitions: word forms find their base (stopped → stop\'s meanings too)', R.definitions(DF, TH, 'stopped').some(function (d) { return d.word === 'stop'; }), true);
