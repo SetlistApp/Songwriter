@@ -10,9 +10,10 @@
      perfect  the tails are the same                         stop / top
      family   same vowels; each consonant is a close cousin  stop / lot (P and T are both "stop" sounds)
      vowel    just the vowels match                          stop / mob
-     loose    same consonants with a different vowel         stop / step
    (One side adding a sound at the end, star / start, lands under vowel.)
-   Strictness 0-3 (Perfect, Family, Vowel, Loose) lists that kind and every closer kind. */
+   Strictness 0-2 (Perfect, Family, Vowel) lists that kind and every closer kind.
+
+   Also here: ranking synonyms and antonyms from Datamuse (the screen does the asking). */
 (function (root) {
   var SW = root.SW = root.SW || {};
 
@@ -30,8 +31,8 @@
     F: 'hiss', TH: 'hiss', S: 'hiss', SH: 'hiss', CH: 'hiss',   // f th s sh ch
     V: 'buzz', DH: 'buzz', Z: 'buzz', ZH: 'buzz', JH: 'buzz'    // v th("the") z zh j
   };
-  var TYPES = ['perfect', 'family', 'vowel', 'loose'];
-  var STRICTNESS = ['Perfect', 'Family', 'Vowel', 'Loose'];
+  var TYPES = ['perfect', 'family', 'vowel'];
+  var STRICTNESS = ['Perfect', 'Family', 'Vowel'];
   var MAX_PER_TYPE = 60;   // the most common 60 of each kind is plenty to scan on a phone
 
   var isVowel = function (p) { return /\d$/.test(p); };
@@ -73,33 +74,26 @@
   }
 
   // "cot" and "caught" sound the same to most American ears, so AA and AO match beyond Perfect.
-  var looseVowel = function (v) { return v === 'AO' ? 'AA' : v; };
+  var nearVowel = function (v) { return v === 'AO' ? 'AA' : v; };
   var sameFamily = function (a, b) { return a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]); };
 
-  /** How two tails rhyme: 0 perfect, 1 family, 2 vowel, 3 loose, or -1 not at all. */
+  /** How two tails rhyme: 0 perfect, 1 family, 2 vowel, or -1 not at all. */
   function compareTails(a, b) {
     var i;
     if (a.join() === b.join()) return 0;
-    var va = a.filter(isVowelToken).map(looseVowel), vb = b.filter(isVowelToken).map(looseVowel);
+    var va = a.filter(isVowelToken).map(nearVowel), vb = b.filter(isVowelToken).map(nearVowel);
     var sameVowels = va.join() === vb.join();
     if (sameVowels && a.length === b.length) {
       for (i = 0; i < a.length; i++) {
         if (isVowelToken(a[i]) !== isVowelToken(b[i])) break;
-        if (isVowelToken(a[i]) ? looseVowel(a[i]) !== looseVowel(b[i]) : !sameFamily(a[i], b[i])) break;
+        if (isVowelToken(a[i]) ? nearVowel(a[i]) !== nearVowel(b[i]) : !sameFamily(a[i], b[i])) break;
       }
       if (i === a.length) return 1;
     }
     if (sameVowels) return 2;
-    // Loose: same consonants (or cousins) with different vowels.
-    if (va.length === vb.length) {
-      var ca = a.filter(notVowelToken), cb = b.filter(notVowelToken);
-      if (ca.length && ca.length === cb.length && ca.every(function (c, k) { return sameFamily(c, cb[k]); }) &&
-          a.map(isVowelToken).join() === b.map(isVowelToken).join()) return 3;
-    }
     return -1;
   }
   function isVowelToken(t) { return VOWELS.indexOf(t) >= 0 || t === 'UH0'; }
-  function notVowelToken(t) { return !isVowelToken(t); }
 
   /** Turns the word list text (SW.WORDS) into something fast to search. */
   function load(text) {
@@ -138,7 +132,7 @@
     return Math.max(1, groups);
   }
 
-  /** How two words rhyme: 'perfect' | 'family' | 'vowel' | 'loose' | null (unknown word or no rhyme). */
+  /** How two words rhyme: 'perfect' | 'family' | 'vowel' | null (unknown word or no rhyme). */
   function rhymeType(dict, a, b) {
     var i = find(dict, a), j = find(dict, b);
     if (i < 0 || j < 0) return null;
@@ -151,24 +145,62 @@
   function rhymes(dict, word, strictness) {
     var i = find(dict, word);
     if (i < 0) return null;
-    var mine = dict.tails[i], self = dict.words[i], found = [];
+    var mine = dict.tails[i], found = [];
     for (var j = 0; j < dict.words.length; j++) {
       if (j === i) continue;
       var t = compareTails(mine, dict.tails[j]);
       if (t < 0 || t > strictness) continue;
-      // A loose match that's just the word plus "s" (stops) isn't worth listing.
       var w = dict.words[j];
-      if (t === 3 && (w === self + 's' || self === w + 's')) continue;
       found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, rank: j });
     }
     found.sort(function (x, y) { return x.t - y.t || x.rank - y.rank; });
-    var perType = [0, 0, 0, 0];
+    var perType = [0, 0, 0];
     return found.filter(function (r) { return ++perType[r.t] <= MAX_PER_TYPE; }).map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
+  }
+
+  // ---------- Synonyms & antonyms (Datamuse) ----------
+  // Datamuse lists every meaning of a word in no useful order ("point" and "period" for stop,
+  // from "full stop"). These sort its answers so the likely ones come first: words that are
+  // true synonyms, closely related, common, and used the same way (a verb for a verb).
+  // Each list item is Datamuse's { word, tags } (asked with md=fp: frequency + part of speech).
+  var MIN_FREQ = 0.3;   // per million words; rarer ones (kibosh) are left out
+  var freqOf = function (x) {
+    var f = (x.tags || []).filter(function (t) { return t.indexOf('f:') === 0; })[0];
+    return f ? +f.slice(2) : 0;
+  };
+  var posOf = function (x) { return (x.tags || []).filter(function (t) { return /^(n|v|adj|adv)$/.test(t); })[0] || null; };
+  var popularity = function (f) { return Math.min(1, Math.log10(f + 1) / 2.5); };   // 0 rare … 1 very common
+  var usable = function (word) { return function (x) { return x.word !== word && /^[a-z'-]+$/.test(x.word) && freqOf(x) >= MIN_FREQ; }; };
+
+  /** Synonyms, best first. me = Datamuse's own entry for the word (for its part of speech),
+      syns = rel_syn answers, related = ml ("means like") answers in Datamuse's order. */
+  function rankSynonyms(word, me, syns, related) {
+    var myPos = me && me.word === word ? posOf(me) : null;
+    var strict = {}, all = {};
+    syns.forEach(function (x) { strict[x.word] = true; });
+    related.forEach(function (x, i) { all[x.word] = { x: x, rel: Math.pow(1 - i / related.length, 2) }; });
+    syns.forEach(function (x) { if (!all[x.word]) all[x.word] = { x: x, rel: 0.3 }; });
+    return Object.keys(all).map(function (k) { return all[k]; }).filter(function (o) { return usable(word)(o.x); })
+      .map(function (o) {
+        var score = 0.45 * o.rel + 0.3 * popularity(freqOf(o.x)) + (strict[o.x.word] ? 0.25 : 0) + (myPos && posOf(o.x) === myPos ? 0.2 : 0);
+        return { word: o.x.word, score: score };
+      })
+      .sort(function (a, b) { return b.score - a.score; })
+      .map(function (o) { return o.word; });
+  }
+
+  /** Antonyms, best first: Datamuse's order counts a little, how common the word is counts more. */
+  function rankAntonyms(word, ants) {
+    return ants.map(function (x, i) { return { x: x, score: 0.25 * (1 - i / ants.length) + 0.75 * popularity(freqOf(x)) }; })
+      .filter(function (o) { return usable(word)(o.x); })
+      .sort(function (a, b) { return b.score - a.score; })
+      .map(function (o) { return o.x.word; });
   }
 
   SW.rhymes = {
     CODE: CODE, SYMBOLS: SYMBOLS, TYPES: TYPES, STRICTNESS: STRICTNESS, FAMILY: FAMILY,
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
-    load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes
+    load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
+    rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms
   };
 })(typeof window !== 'undefined' ? window : globalThis);

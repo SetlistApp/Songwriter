@@ -257,7 +257,6 @@
 }
 .sw-wd.sw-t-perfect { border-color: rgba(227, 168, 59, 0.6); }
 .sw-wd.sw-t-family { border-style: dashed; border-color: #5d5a62; }
-.sw-wd.sw-t-loose { color: var(--sw-dim); }
 
 /* ---------- Word sheet ---------- */
 .sw-wsheet { height: 82vh; }   /* same height on every tab, so buttons don't jump around */
@@ -294,7 +293,6 @@
 .sw-wkey i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--sw-line); background: var(--sw-surface); }
 .sw-wkey i.sw-t-perfect { border-color: rgba(227, 168, 59, 0.6); }
 .sw-wkey i.sw-t-family { border-style: dashed; border-color: #5d5a62; }
-.sw-wkey i.sw-t-loose { opacity: 0.5; }
 .sw-wnote { margin-top: 16px; font-size: 11.5px; color: var(--sw-dim); }
 
 /* ---------- Voice leading ---------- */

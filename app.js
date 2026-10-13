@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta4';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta5';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -20,9 +20,9 @@
   const STRICT_HELP = [
     'Same vowel and same ending sound.',
     'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
-    'Just the vowel sounds match.',
-    'Also the same ending sounds with a different vowel.'
+    'Just the vowel sounds match.'
   ];
+  const SHOW_SYNONYMS = 40;
 
   function mount(el) {
     const state = {
@@ -46,7 +46,7 @@
       word: null,            // word shown in the word sheet
       wordTrail: [],         // words looked up before it from inside the sheet (for ‹ Back)
       wordTab: 'rhymes',     // 'rhymes' | 'syn' | 'ant'
-      strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel, 3 Loose
+      strict: 1,             // rhyme strictness: 0 Perfect, 1 Family, 2 Vowel
       // Voice leading
       vlNotes: 3,            // 3 or 4 notes per chord
       vlInv: true,           // allow inversions
@@ -395,18 +395,20 @@
       if (state.wordTab !== 'rhymes') fetchWords(state.wordTab, w);
     }
 
-    /** Synonyms / antonyms / "means like" from Datamuse. Redraws when the answer arrives. */
+    /** Synonyms or antonyms from Datamuse, sorted best first (SW.rhymes ranks them).
+        Redraws when the answer arrives. */
     function fetchWords(kind, word) {
       const key = `${kind}:${word}`;
       if (dmCache[key] && dmCache[key].status !== 'error') return;
       dmCache[key] = { status: 'loading', words: [] };
-      const q = (rel) => fetch(`${DATAMUSE}?${rel}=${encodeURIComponent(word)}&max=40`)
-        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then((list) => list.map((x) => x.word).filter((x) => /^[a-z' -]+$/.test(x) && x !== word));
-      const asks = kind === 'syn' ? [q('rel_syn'), q('ml')] : [q('rel_ant')];
-      Promise.all(asks).then(([main, more]) => {
-        dmCache[key] = { status: 'ok', words: main, more: (more || []).filter((x) => !main.includes(x)).slice(0, 24) };
-      }).catch(() => { dmCache[key] = { status: 'error', words: [] }; })
+      const ask = (query) => fetch(`${DATAMUSE}?${query}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+      const w = encodeURIComponent(word);
+      const done = kind === 'syn'
+        ? Promise.all([ask(`sp=${w}&md=p&max=1`), ask(`rel_syn=${w}&md=fp&max=100`), ask(`ml=${w}&md=fp&max=150`)])
+          .then(([me, syns, related]) => R.rankSynonyms(word, me[0], syns, related).slice(0, SHOW_SYNONYMS))
+        : ask(`rel_ant=${w}&md=f&max=50`).then((ants) => R.rankAntonyms(word, ants));
+      done.then((words) => { dmCache[key] = { status: 'ok', words }; })
+        .catch(() => { dmCache[key] = { status: 'error', words: [] }; })
         .then(() => { if (state.sheet === 'word' && state.word === word && state.wordTab === kind) render(); });
     }
 
@@ -434,7 +436,7 @@
       }
       const stops = R.STRICTNESS.map((s, i) => `<button class="${i === state.strict ? 'sw-on' : ''}" data-act="strict" data-arg="${i}">${s}</button>`).join('');
       return `<div class="sw-strict"><div class="sw-sub">Strictness</div>
-          <input class="sw-range" type="range" min="0" max="3" step="1" value="${state.strict}" data-strict style="--p:${state.strict * 100 / 3}%">
+          <input class="sw-range" type="range" min="0" max="2" step="1" value="${state.strict}" data-strict style="--p:${state.strict * 50}%">
           <div class="sw-stops">${stops}</div></div>
         <div data-wbody>${rhymeBody()}</div>`;
     }
@@ -446,9 +448,8 @@
         return `<div class="sw-wempty">${navigator.onLine === false ? 'You’re offline. Synonyms and antonyms need internet; rhymes still work.' : 'Couldn’t reach the word service.'} <button class="sw-link" data-act="word-retry">Try again</button></div>`;
       }
       const name = kind === 'syn' ? 'synonyms' : 'antonyms';
-      let html = got.words.length ? `<div class="sw-sub">${kind === 'syn' ? 'Synonyms' : 'Antonyms'}</div>${wordButtons(got.words)}` : `<div class="sw-wempty">No ${name} found.</div>`;
-      if (got.more && got.more.length) html += `<div class="sw-sub">Means like</div>${wordButtons(got.more)}`;
-      return html + '<div class="sw-wnote">From Datamuse (needs internet).</div>';
+      const html = got.words.length ? `<div class="sw-sub">${kind === 'syn' ? 'Synonyms' : 'Antonyms'} · best first</div>${wordButtons(got.words)}` : `<div class="sw-wempty">No ${name} found.</div>`;
+      return html + '<div class="sw-wnote">From Datamuse (needs internet). Sorted by how close the meaning is and how common the word is.</div>';
     }
 
     function wordSheet() {
@@ -659,7 +660,7 @@
       // Strictness slider: update just the list (redrawing everything would drop the finger's grip).
       if (e.target.matches('[data-strict]')) {
         state.strict = +e.target.value;
-        e.target.style.setProperty('--p', `${state.strict * 100 / 3}%`);
+        e.target.style.setProperty('--p', `${state.strict * 50}%`);
         el.querySelectorAll('.sw-stops button').forEach((b, i) => b.classList.toggle('sw-on', i === state.strict));
         el.querySelector('[data-wbody]').innerHTML = rhymeBody();
       }
@@ -896,6 +897,7 @@
       if (!snap) return;
       T.getScale(snap.scaleId);   // throws if the saved scale no longer exists
       Object.assign(state, snap, { tonic: T.note(snap.tonic.letter, snap.tonic.acc), sheet: null });
+      state.strict = Math.min(state.strict, SW.rhymes.STRICTNESS.length - 1);   // Loose (3) was removed in beta5
     } catch (e) { /* nothing saved, or it's from an older version: start fresh */ }
   }
 

@@ -164,12 +164,12 @@
     check('stop / lot: family (P and T are both stop sounds)', R.rhymeType(D, 'stop', 'lot'), 'family');
     check('time / line: family (M and N hum)', R.rhymeType(D, 'time', 'line'), 'family');
     check('stop / mob: vowel', R.rhymeType(D, 'stop', 'mob'), 'vowel');
-    check('stop / step: loose (same ending, other vowel)', R.rhymeType(D, 'stop', 'step'), 'loose');
+    check('stop / step: no rhyme (Loose was removed)', R.rhymeType(D, 'stop', 'step'), null);
     check('row / road: vowel (one extra sound at the end)', R.rhymeType(D, 'row', 'road'), 'vowel');
     check('stop / tree: no rhyme', R.rhymeType(D, 'stop', 'tree'), null);
     check('lot / thought: AA and AO count as one vowel beyond Perfect', R.rhymeType(D, 'lot', 'thought'), 'family');
     check('golden / holding: family (quiet vowels match, N and NG hum)', R.rhymeType(D, 'golden', 'holding'), 'family');
-    var perfect = R.rhymes(D, 'stop', 0), family = R.rhymes(D, 'stop', 1), loose = R.rhymes(D, 'stop', 3);
+    var perfect = R.rhymes(D, 'stop', 0), family = R.rhymes(D, 'stop', 1), loose = R.rhymes(D, 'stop', 2);
     check('Perfect rhymes for stop start with top, drop', words(perfect).slice(0, 2), ['top', 'drop']);
     check('Perfect only lists perfect rhymes', perfect.every(function (r) { return r.type === 'perfect'; }), true);
     check('Family adds lot, keeps perfect ones first', words(family).indexOf('lot') > words(family).indexOf('top') && family[0].type === 'perfect', true);
@@ -177,12 +177,27 @@
     check('Results are closest first', loose.every(function (r, i) { return !i || R.TYPES.indexOf(loose[i - 1].type) <= R.TYPES.indexOf(r.type); }), true);
     check('The word itself is left out', words(loose).indexOf('stop') < 0, true);
     check('Results know their syllables (nonstop = 2)', perfect.filter(function (r) { return r.word === 'nonstop'; })[0].syllables, 2);
-    check('Unknown word: no rhymes (null)', R.rhymes(D, 'skrrtzz', 3), null);
+    check('Unknown word: no rhymes (null)', R.rhymes(D, 'skrrtzz', 2), null);
+    check('Three strictness steps: Perfect, Family, Vowel', R.STRICTNESS, ['Perfect', 'Family', 'Vowel']);
     check('Lookups ignore case and punctuation ("Stop!")', R.rhymeType(D, 'Stop!', '“top,”'), 'perfect');
     check('Curly apostrophes work (couldn’t)', R.find(D, 'couldn’t') >= 0, true);
     check('Contractions are in the list', ['don\'t', 'i\'m', 'you\'re', 'it\'s', 'ain\'t'].every(function (w) { return R.find(D, w) >= 0; }), true);
     check("runnin' is looked up as running", R.syllables(D, "runnin'"), 2);
     check('Syllables from the list', ['every', 'orange', 'golden', 'a'].map(function (w) { return R.syllables(D, w); }), [3, 2, 2, 1]);
+    // --- Synonyms & antonyms ranking (sample Datamuse answers for "stop", trimmed) ---
+    var dm = function (word, f, pos) { return { word: word, tags: (pos ? [pos] : []).concat(['f:' + f]) }; };
+    var stopMe = { word: 'stop', tags: ['v', 'n'] };
+    var stopSyns = [dm('break', 45.6, 'v'), dm('point', 274.9, 'n'), dm('period', 187.8, 'n'), dm('cease', 9.1, 'v'),
+      dm('kibosh', 0.02, 'n'), dm('quit', 8.4, 'v'), dm('give up', 18.6, 'v'), dm('halt', 6.3, 'n')];
+    var stopRelated = [dm('stoppage', 0.7, 'n'), dm('cease', 9.1, 'v'), dm('kibosh', 0.02, 'n'), dm('quit', 8.4, 'v'),
+      dm('halt', 6.3, 'n'), dm('pause', 20.1, 'v'), dm('point', 274.9, 'n'), dm('end', 160.2, 'v'), dm('diaphragm', 4.5, 'n')];
+    var syn = R.rankSynonyms('stop', stopMe, stopSyns, stopRelated);
+    check('Synonyms: rare words left out (kibosh)', syn.indexOf('kibosh'), -1);
+    check('Synonyms: phrases left out (give up)', syn.indexOf('give up'), -1);
+    check('Synonyms: close verbs come before other meanings (cease before point)', syn.indexOf('cease') < syn.indexOf('point'), true);
+    check('Synonyms: related words are included too (end)', syn.indexOf('end') >= 0, true);
+    var ant = R.rankAntonyms('stop', [dm('preserve', 14.5), dm('start', 79.1), dm('carry on', 8.6), dm('continue', 63.3), dm('continuant', 0.1), dm('go', 300)]);
+    check('Antonyms: common ones first (go, start, continue before preserve)', ant, ['go', 'start', 'continue', 'preserve']);
     check('Syllables guessed for unknown words', ['skrrt', 'flombake', 'zibbletable'].map(function (w) { return R.syllables(D, w); }), [1, 2, 4]);
 
     return results;
