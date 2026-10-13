@@ -287,7 +287,15 @@
     require('./definitions.js');
     require('./songs.js');
     require('./rhymes.js');
-    var results = SW.runTests(), failed = results.filter(function (r) { return !r.ok; });
+    var results = SW.runTests();
+    // Every editor button (data-act="ed-…") must have a matching case in editor.js's act().
+    var fs = require('fs'), src = fs.readFileSync(__dirname + '/editor.js', 'utf8');
+    var acts = {}, cases = {};
+    (src.match(/data-act="(ed-[a-z-]+)"/g) || []).forEach(function (m) { acts[m.slice(10, -1)] = true; });
+    (src.match(/case '(ed-[a-z-]+)'/g) || []).forEach(function (m) { cases[m.slice(6, -1)] = true; });
+    var missing = Object.keys(acts).filter(function (a) { return !cases[a]; });
+    results.push({ name: 'Editor: every button has code behind it', ok: missing.length === 0, got: missing, want: [] });
+    var failed = results.filter(function (r) { return !r.ok; });
     failed.forEach(function (r) { console.log('FAIL  ' + r.name + '\n      got:  ' + JSON.stringify(r.got) + '\n      want: ' + JSON.stringify(r.want)); });
     console.log((results.length - failed.length) + ' passed, ' + failed.length + ' failed');
     process.exitCode = failed.length ? 1 : 0;

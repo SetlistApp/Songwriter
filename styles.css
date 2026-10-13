@@ -508,3 +508,26 @@
   background: #2c2b30; border: 1px solid #3a393f; font-size: 14px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 .sw-toast button { color: var(--sw-gold); font-family: var(--sw-display); font-weight: 600; font-size: 14px; }
+
+/* ---------- Lyrics page, plain-text look: no boxes, sections flow like a document ---------- */
+.sw-sec, .sw-sec.sw-editing, .sw-sec.sw-rep {
+  background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin: 0 0 22px;
+}
+.sw-sec.sw-editing { border-left: 2px solid var(--sw-gold); padding-left: 10px; margin-left: -12px; }
+.sw-sec .sw-tag, .sw-sec.sw-rep .sw-tag { background: transparent; padding: 0; min-height: 28px; border-radius: 0; }
+.sw-sec.sw-rep .sw-tag { color: var(--sw-dim); }
+.sw-sechd { margin-bottom: 2px; }
+/* Same font and line height while reading and typing, so tapping in doesn't make the text jump */
+.sw-ln { font-size: 16px; line-height: 1.6; min-height: 25.6px; align-items: flex-start; }
+.sw-ln.sw-blank { min-height: 25.6px; }
+.sw-lt { padding: 2px 0; }
+.sw-lg { width: 56px; min-height: 29.6px; padding: 0; justify-content: flex-end; }
+.sw-ta { min-height: 77px; }
+.sw-done { background: transparent; color: var(--sw-gold); padding: 0 2px; min-height: 30px; }
+.sw-addsec { width: auto; min-height: 40px; border: 0; padding: 0; text-align: left; }
+.sw-countbar { display: flex; justify-content: flex-end; margin: -6px 0 6px; }
+.sw-countbar .sw-switch { font-size: 12px; color: var(--sw-dim); }
+/* Counts & rhymes hidden: plain lyrics, full width */
+.sw-nocounts .sw-lg, .sw-nocounts .sw-gutter, .sw-nocounts .sw-scheme { display: none; }
+.sw-nocounts .sw-u { text-decoration: none; }
+.sw-nocounts .sw-ta, .sw-nocounts .sw-mirror { width: 100%; }

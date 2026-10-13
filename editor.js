@@ -30,6 +30,10 @@
     var pending = {}, saveTimer = null, saving = false, saveError = false, titleTimer = null;
     var undo = null;                            // { text, run, timer }
     var loadingId = null;                       // song being fetched (so it's only asked for once)
+    // Syllable counts & rhyme letters on/off: a small per-phone convenience, so phone storage is fine.
+    var COUNTS_KEY = 'songwriter_showCounts';
+    var showCounts = true;
+    try { showCounts = root.localStorage.getItem(COUNTS_KEY) !== 'off'; } catch (e) { /* private mode: default on */ }
 
     if (!state.lyView) state.lyView = 'list';   // 'list' | 'song'
 
@@ -201,13 +205,11 @@
       var x = secs[id];
       if (x.repeat_of) {
         var target = secs[x.repeat_of];
-        return `<div class="sw-sec sw-rep" data-sec="${id}"><span>↻ ${esc(target ? lab[x.repeat_of] || target.tag : 'Repeat')} <i>(repeat)</i></span>
-          <button class="sw-dots" data-act="ed-menu" data-id="${id}" aria-label="Section menu">⋯</button></div>`;
+        return `<div class="sw-sec sw-rep" data-sec="${id}"><button class="sw-tag sw-keepcase" data-act="ed-menu" data-id="${id}">↻ ${esc(target ? lab[x.repeat_of] || target.tag : 'Repeat')} <span>▾</span></button></div>`;
       }
       var editing = state.lyEditing === id;
       var head = `<div class="sw-sechd"><button class="sw-tag sw-keepcase" data-act="ed-menu" data-id="${id}">${esc(lab[id])} <span>▾</span></button>
-        <span class="sw-scheme" data-scheme="${id}">${esc(schemeOf(x))}</span>
-        <button class="sw-dots" data-act="ed-menu" data-id="${id}" aria-label="Section menu">⋯</button></div>`;
+        <span class="sw-scheme" data-scheme="${id}">${esc(schemeOf(x))}</span></div>`;
       if (editing) {
         return `<div class="sw-sec sw-editing" data-sec="${id}">${head}
           <div class="sw-tawrap"><textarea class="sw-ta" data-body="${id}" rows="4" placeholder="Write here…" autocapitalize="sentences" spellcheck="true">${esc(x.body)}</textarea>
@@ -225,9 +227,10 @@
       return `<div class="sw-songbar"><button class="sw-back" data-act="ed-back" aria-label="Back to songs">‹</button>
           <input class="sw-title sw-keepcase" data-title value="${esc(song.title || '')}" placeholder="Song title" autocomplete="off">
           ${status()}<button class="sw-dots" data-act="ed-songmenu" aria-label="Song menu">⋯</button></div>
-        <div class="sw-secs">${o.map(function (id) { return sectionCard(id, lab); }).join('')}</div>
+        <div class="sw-countbar"><button class="sw-switch ${showCounts ? 'sw-on' : ''}" data-act="ed-counts"><span></span>Syllables &amp; rhymes</button></div>
+        <div class="sw-secs ${showCounts ? '' : 'sw-nocounts'}">${o.map(function (id) { return sectionCard(id, lab); }).join('')}</div>
         <button class="sw-addsec" data-act="ed-add">+ Add section</button>
-        <div class="sw-legend"><span>8 = syllables</span><span><b>A</b> = rhymes</span><span>dashed = near · dotted = vowel</span><span>tap a letter to change</span></div>
+        ${showCounts ? '<div class="sw-legend"><span>8 = syllables</span><span><b>A</b> = rhymes</span><span>dashed = near · dotted = vowel</span><span>tap a letter to change</span></div>' : '<div class="sw-legend"></div>'}
         ${undoBar()}
         <div class="sw-wordbar" data-wordbar hidden></div>`;
     }
@@ -505,6 +508,10 @@
         }
         case 'ed-menu': flush(); state.lyMenu = d.id; state.sheet = 'ed-menu'; break;
         case 'ed-songmenu': state.sheet = 'ed-songmenu'; break;
+        case 'ed-counts':
+          showCounts = !showCounts;
+          try { root.localStorage.setItem(COUNTS_KEY, showCounts ? 'on' : 'off'); } catch (e) { /* fine */ }
+          break;
         case 'ed-link': flush(); state.lyMenu = d.id; state.lyLine = +d.line; state.sheet = 'ed-link'; break;
         case 'ed-letter': {
           var dict = ctx.dict();
@@ -516,6 +523,15 @@
           queue(x.id, { rhyme_letters: letters }); flush();
           break;
         }
+        case 'ed-add': state.sheet = 'ed-add'; break;
+        case 'ed-addtag':
+          o = order().concat(['NEW']);
+          state.sheet = null;
+          change(store.addSection(song.id, { tag: d.arg }, o).then(function (r) {
+            secs[r.section.id] = r.section; song.section_order = r.order;
+            state.lyEditing = r.section.id; afterRender.focusNext = true;
+          }));
+          return true;
         case 'ed-tag':
           if (!x) break;
           x.tag = d.arg; queue(x.id, { tag: d.arg }); flush();
