@@ -183,6 +183,10 @@
       var p = R.pronunciations(D, 'live'), lyve = words(R.rhymes(D, 'live', 0, p[0].pron)), liv = words(R.rhymes(D, 'live', 0, p[1].pron));
       return [lyve.indexOf('five') >= 0, lyve.indexOf('give') >= 0, liv.indexOf('give') >= 0, liv.indexOf('five') >= 0];
     })(), [true, false, true, false]);
+    check('Mumbled or odd alternates don\'t count: to, does, says aren\'t rhymes for "liv"; is, his, with are', (function () {
+      var liv = words(R.rhymes(D, 'live', 1, R.pronunciations(D, 'live')[1].pron));
+      return ['to', 'does', 'says', 'is', 'his', 'with'].map(function (w) { return liv.indexOf(w) >= 0; });
+    })(), [false, false, false, true, true, true]);
     check('Words said one way have no choice to make (stop)', R.pronunciations(D, 'stop'), []);
     check('Names are marked in the word list (george), everyday words aren\'t (something)', [D.real[D.index.george], D.real[D.index.something]], [false, true]);
     check('The word itself is left out', words(loose).indexOf('stop') < 0, true);

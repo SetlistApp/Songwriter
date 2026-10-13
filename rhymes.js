@@ -138,7 +138,11 @@
     text.split('|').forEach(function (entry, i) {
       var sp = entry.indexOf(' '), w = entry.slice(0, sp), isName = w[0] === '^';
       if (isName) w = w.slice(1);
-      var all = entry.slice(sp + 1).split(',').map(decode);
+      // Other ways to say it count for rhyming only if they're real ones: not a mumbled form with no
+      // stressed vowel ("to" as "tih", "does" as "diz"), and not for small grammar words ("says" as "siz").
+      var all = entry.slice(sp + 1).split(',').map(decode).filter(function (ph, k) {
+        return k === 0 || (!GRAMMAR_WORDS[w] && ph.some(function (p) { return /[12]$/.test(p); }));
+      });
       words.push(w); phones.push(all[0]); alts.push(all); tails.push(all.map(tail)); real.push(!isName);
       index[w] = i;
     });
