@@ -171,61 +171,78 @@
     }, 0);
   }
 
-  /** A user's own rhyme choice for two words in a section: true (rhyme), false (don't), undefined (let the dictionary decide). */
-  function linkOf(links, a, b) {
-    var hit = (links || []).filter(function (l) { return (l.a === a && l.b === b) || (l.a === b && l.b === a); })[0];
-    return hit ? hit.on : undefined;
-  }
-  var LEVEL = { perfect: 0, linked: 0, family: 1, vowel: 2 };
+  var LEVEL = { perfect: 0, family: 1, vowel: 2 };
+  var LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
-  /** How two line-ending words rhyme for the editor's letters: 'perfect' | 'linked' | 'family' | 'vowel' | null. */
-  function lineRhyme(dict, a, b, links) {
+  /** How two line-ending words rhyme: 'perfect' | 'family' | 'vowel' | null. */
+  function lineRhyme(dict, a, b) {
     if (a === b) return 'perfect';
-    var l = linkOf(links, a, b);
-    if (l === true) return 'linked';
-    if (l === false) return null;
     return rhymeType(dict, a, b);
   }
 
-  /** Rhyme letters for a section's lines (A, B, C… by first appearance). Line endings that rhyme
-      share a letter; kind says how closely: perfect or linked (solid), family (dashed), vowel (dotted).
-      links = the section's own choices [{ a, b, on }] (words you linked or unlinked yourself).
-      Blank lines get no letter; neither does a line whose ending rhymes with nothing.
+  /** Rhyme letters for a section's lines.
+      Each line pairs with the line(s) it rhymes with *best* (so "thing" goes with "mean", not with "me"
+      on a looser vowel match), and paired lines share a letter, A, B, C… in order of appearance.
+      kind says how closely: perfect (solid), family (dashed), vowel (dotted), picked (you chose it).
+      picked = letters you chose yourself, by line-ending word: { mean: 'B', skrrt: '-' } ('-' = no letter).
+      Your letters are kept as they are; automatic groups take the next free letters.
       Returns { lines: [{ letter, kind, near, word, end, syllables }], scheme: "ABAB" }. */
-  function rhymeScheme(dict, lines, links) {
-    var groups = [];   // { letter, words: [] }
-    var out = lines.map(function (line) {
+  function rhymeScheme(dict, lines, picked) {
+    picked = picked || {};
+    var info = lines.map(function (line) {
       var words = lineWords(line), last = words.length ? clean(words[words.length - 1]) : '';
-      var info = { letter: '', kind: '', near: false, word: words.length ? words[words.length - 1] : '', end: last, syllables: lineSyllables(dict, line) };
-      if (!last) return info;
-      // Join the group this ending rhymes with most closely (a word you linked counts as perfect).
-      var best = null;
-      groups.forEach(function (g) {
-        var kind = null;
-        g.words.forEach(function (other) {
-          var t = lineRhyme(dict, last, other, links);
-          if (t && (!kind || LEVEL[t] < LEVEL[kind])) kind = t;
-        });
-        if (kind && (!best || LEVEL[kind] < LEVEL[best.kind])) best = { g: g, kind: kind };
+      return { letter: '', kind: '', near: false, word: words.length ? words[words.length - 1] : '', end: last, syllables: lineSyllables(dict, line) };
+    });
+    var n = info.length, parent = info.map(function (x, i) { return i; }), mark = {};   // mark[root] = a picked letter
+    var root = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    var join = function (i, j) {
+      var a = root(i), b = root(j);
+      if (a === b || (mark[a] && mark[b] && mark[a] !== mark[b])) return;   // never merge two different letters you picked
+      parent[b] = a;
+      if (mark[b]) mark[a] = mark[b];
+    };
+    var pickOf = function (i) { var p = info[i].end && picked[info[i].end]; return p && (p === '-' || LETTERS.indexOf(p) >= 0) ? p : null; };
+    // Your letters first.
+    var byLetter = {};
+    info.forEach(function (x, i) {
+      var p = pickOf(i);
+      if (!p || p === '-') return;
+      mark[root(i)] = p;
+      if (byLetter[p] !== undefined) join(byLetter[p], i); else byLetter[p] = i;
+      x.kind = 'picked';
+    });
+    // Then each other line joins the line(s) it rhymes with best.
+    info.forEach(function (x, i) {
+      if (!x.end || pickOf(i)) return;
+      var best = null, partners = [];
+      info.forEach(function (y, j) {
+        if (j === i || !y.end || pickOf(j) === '-') return;
+        var k = lineRhyme(dict, x.end, y.end);
+        if (!k) return;
+        if (best === null || LEVEL[k] < LEVEL[best]) { best = k; partners = [j]; } else if (k === best) partners.push(j);
       });
-      if (best) { best.g.words.push(last); info.letter = best.g.letter; info.kind = best.kind; return info; }
-      var letter = String.fromCharCode(65 + (groups.length % 26));
-      groups.push({ letter: letter, words: [last] });
-      info.letter = letter; info.kind = 'perfect';   // the first line of a group
-      return info;
+      if (best === null) return;
+      x.kind = best;
+      partners.forEach(function (j) { join(i, j); });
     });
-    // A letter only means something if at least two lines share it.
-    var count = {};
-    out.forEach(function (l) { if (l.letter) count[l.letter] = (count[l.letter] || 0) + 1; });
-    out.forEach(function (l) { if (l.letter && count[l.letter] < 2) { l.letter = ''; l.kind = ''; } });
-    // Re-letter in order of appearance so the scheme reads ABAB, not ACAC.
-    var map = {}, next = 0;
-    out.forEach(function (l) {
-      if (l.letter) { if (!map[l.letter]) map[l.letter] = String.fromCharCode(65 + next++ % 26); l.letter = map[l.letter]; }
-      l.near = l.kind === 'family' || l.kind === 'vowel';
+    // Letters: picked groups keep theirs; other groups of 2+ lines get the next free letter in order.
+    var size = {};
+    info.forEach(function (x, i) { if (x.end && pickOf(i) !== '-') size[root(i)] = (size[root(i)] || 0) + 1; });
+    var used = {}; Object.keys(mark).forEach(function (r) { if (root(+r) === +r) used[mark[r]] = true; });
+    var auto = {}, next = 0;
+    info.forEach(function (x, i) {
+      if (!x.end || pickOf(i) === '-') { x.kind = ''; return; }
+      var r = root(i);
+      if (mark[r]) { x.letter = mark[r]; if (!x.kind) x.kind = 'perfect'; }
+      else if (size[r] >= 2) {
+        if (!auto[r]) { while (used[LETTERS[next % 26]]) next++; auto[r] = LETTERS[next % 26]; used[auto[r]] = true; }
+        x.letter = auto[r];
+        if (!x.kind) x.kind = 'perfect';
+      } else x.kind = '';
+      x.near = x.kind === 'family' || x.kind === 'vowel';
     });
-    var scheme = out.filter(function (l, i) { return lines[i].trim(); }).map(function (l) { return l.letter || '·'; }).join('');
-    return { lines: out, scheme: /[A-Z]/.test(scheme) ? scheme : '' };
+    var scheme = info.filter(function (l, i) { return lines[i].trim(); }).map(function (l) { return l.letter || '·'; }).join('');
+    return { lines: info, scheme: /[A-Z]/.test(scheme) ? scheme : '' };
   }
 
   // ---------- Synonyms & antonyms (Datamuse) ----------

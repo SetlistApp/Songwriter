@@ -171,7 +171,7 @@
       var lines = (x.body || '').split('\n');
       if (!x.body.trim()) return '<div class="sw-ph">Tap to write…</div>';
       var dict = ctx.dict();
-      var sch = dict ? R.rhymeScheme(dict, lines, x.rhyme_links) : null;
+      var sch = dict ? R.rhymeScheme(dict, lines, x.rhyme_letters) : null;
       return lines.map(function (line, i) {
         if (!line.trim()) return '<div class="sw-ln sw-blank"></div>';
         var info = sch ? sch.lines[i] : { letter: '', syllables: '' };
@@ -180,13 +180,13 @@
           var at = line.lastIndexOf(info.word);
           text = esc(line.slice(0, at)) + `<span class="sw-u ${kindClass(info)}">${esc(info.word)}</span>` + esc(line.slice(at + info.word.length));
         }
-        // The counts and letter are a button: tap to choose what this line rhymes with.
-        return `<div class="sw-ln"><span class="sw-lt">${text}</span><button class="sw-lg" data-act="ed-link" data-id="${x.id}" data-line="${i}" aria-label="Choose rhymes for this line"><span class="sw-ls">${info.syllables}</span>${letterChip(info)}</button></div>`;
+        // The counts and letter are a button: tap to pick this line's rhyme letter.
+        return `<div class="sw-ln"><span class="sw-lt">${text}</span><button class="sw-lg" data-act="ed-link" data-id="${x.id}" data-line="${i}" aria-label="Choose the rhyme letter for this line"><span class="sw-ls">${info.syllables}</span>${letterChip(info)}</button></div>`;
       }).join('');
     }
-    /** Color by letter; outline by how closely it rhymes: solid (perfect or linked), dashed (family), dotted (vowel). */
+    /** Color by letter; outline by how closely it rhymes: solid (perfect, or a letter you picked), dashed (family), dotted (vowel). */
     function kindClass(info) {
-      return `sw-c${info.letter.charCodeAt(0) % 4}${info.kind === 'family' ? ' sw-near' : info.kind === 'vowel' ? ' sw-vowel' : ''}`;
+      return `sw-c${info.letter.charCodeAt(0) % 4}${info.kind === 'family' ? ' sw-near' : info.kind === 'vowel' ? ' sw-vowel' : ''}`;   // perfect & picked: solid
     }
     function letterChip(info) {
       return info.letter ? `<span class="sw-lr ${kindClass(info)}">${info.letter}</span>` : '<span class="sw-lr sw-none"></span>';
@@ -194,7 +194,7 @@
 
     function schemeOf(x) {
       var dict = ctx.dict();
-      return dict && x.body.trim() ? R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_links).scheme : '';
+      return dict && x.body.trim() ? R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_letters).scheme : '';
     }
 
     function sectionCard(id, lab) {
@@ -241,7 +241,7 @@
       var body = '';
       if (state.sheet === 'ed-menu') body = sectionMenu(secs[state.lyMenu]);
       else if (state.sheet === 'ed-add') body = tagPicker('ed-addtag', null, 'Add a section');
-      else if (state.sheet === 'ed-link') body = linkMenu();
+      else if (state.sheet === 'ed-link') body = letterMenu();
       else if (state.sheet === 'ed-songmenu') body = `<div class="sw-sheet-title">${esc(song ? song.title || 'Untitled' : '')}<button data-act="close-sheet">Done</button></div>
         <button class="sw-mitem sw-red" data-act="ed-delsong">Delete song <span>Undo for 10 s</span></button>`;
       if (!body) return '';
@@ -249,25 +249,26 @@
         <div class="sw-sheet"><div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div></div>${body}</div>`;
     }
 
-    /** "mean" rhymes with…: every other line ending in the section, on if they rhyme. Tap to change. */
-    function linkMenu() {
+    /** Pick this line's rhyme letter: Auto, A, B, C… or None. Same letter = they rhyme. */
+    function letterMenu() {
       var x = secs[state.lyMenu], dict = ctx.dict();
       if (!x || !dict) return '';
-      var sch = R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_links);
-      var me = sch.lines[state.lyLine] && sch.lines[state.lyLine].end;
-      if (!me) return '';
-      var others = [];
-      sch.lines.forEach(function (l) { if (l.end && l.end !== me && others.indexOf(l.end) < 0) others.push(l.end); });
-      var name = { perfect: 'rhymes', linked: 'you linked', family: 'near rhyme', vowel: 'vowel rhyme' };
-      var mine = (x.rhyme_links || []).filter(function (l) { return l.a === me || l.b === me; }).length;
-      return `<div class="sw-sheet-title"><span class="sw-keepcase">“${esc(me)}” rhymes with…</span><button data-act="close-sheet">Done</button></div>
-        <div class="sw-whelp">Tap to turn a rhyme on or off for this section. The dictionary decides the rest.</div>
-        ${others.length ? others.map(function (o) {
-          var kind = R.lineRhyme(dict, me, o, x.rhyme_links);
-          return `<button class="sw-mitem sw-link ${kind ? 'sw-on' : ''}" data-act="ed-linkset" data-arg="${esc(o)}">
-            <span class="sw-keepcase"><i>${kind ? '✓' : ''}</i>${esc(o)}</span><span>${kind ? name[kind] : 'no rhyme'}</span></button>`;
-        }).join('') : '<div class="sw-wempty">No other lines in this section yet.</div>'}
-        ${mine ? '<button class="sw-moremean" data-act="ed-linkreset">Back to automatic for this word</button>' : ''}`;
+      var picked = x.rhyme_letters || {};
+      var sch = R.rhymeScheme(dict, x.body.split('\n'), picked);
+      var me = sch.lines[state.lyLine];
+      if (!me || !me.end) return '';
+      // Which line endings already use each letter, as a hint ("A · me").
+      var users = {};
+      sch.lines.forEach(function (l) { if (l.letter && l.end !== me.end) (users[l.letter] = users[l.letter] || []).indexOf(l.end) < 0 && users[l.letter].push(l.end); });
+      var maxUsed = sch.lines.reduce(function (m, l) { return l.letter ? Math.max(m, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(l.letter)) : m; }, -1);
+      var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, Math.min(26, Math.max(4, maxUsed + 2))).split('');
+      var cur = picked[me.end] || 'auto';
+      var btn = function (val, label, hint) {
+        return `<button class="${cur === val ? 'sw-on' : ''}" data-act="ed-letter" data-arg="${val}">${label}${hint ? `<small class="sw-keepcase">${esc(hint)}</small>` : ''}</button>`;
+      };
+      return `<div class="sw-sheet-title"><span class="sw-keepcase">Rhyme letter for “${esc(me.end)}”</span><button data-act="close-sheet">Done</button></div>
+        <div class="sw-whelp">Lines with the same letter rhyme. Auto lets the dictionary decide${cur === 'auto' && me.letter ? ` (now ${me.letter})` : ''}.</div>
+        <div class="sw-letters">${btn('auto', 'Auto')}${letters.map(function (L) { return btn(L, L, (users[L] || []).slice(0, 2).join(', ')); }).join('')}${btn('-', 'None')}</div>`;
     }
 
     /** Section type buttons plus a Custom… box (with names used before in this song). */
@@ -379,7 +380,7 @@
       mirror.innerHTML = lines.map(function (l) { return `<div>${esc(l) || '&#8203;'}</div>`; }).join('');
       ta.style.height = 'auto';
       ta.style.height = Math.max(ta.scrollHeight, mirror.offsetHeight + 4) + 'px';
-      var dict = ctx.dict(), sch = dict ? R.rhymeScheme(dict, lines, secs[id] && secs[id].rhyme_links) : null;
+      var dict = ctx.dict(), sch = dict ? R.rhymeScheme(dict, lines, secs[id] && secs[id].rhyme_letters) : null;
       var tops = [].map.call(mirror.children, function (d) { return d.offsetTop; });
       gutter.innerHTML = lines.map(function (l, i) {
         if (!l.trim() || !sch) return '';
@@ -505,32 +506,16 @@
         case 'ed-menu': flush(); state.lyMenu = d.id; state.sheet = 'ed-menu'; break;
         case 'ed-songmenu': state.sheet = 'ed-songmenu'; break;
         case 'ed-link': flush(); state.lyMenu = d.id; state.lyLine = +d.line; state.sheet = 'ed-link'; break;
-        case 'ed-linkset':
-        case 'ed-linkreset': {
+        case 'ed-letter': {
           var dict = ctx.dict();
           if (!x || !dict) break;
-          var me = R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_links).lines[state.lyLine].end;
-          var links = (x.rhyme_links || []).filter(function (l) {
-            return name === 'ed-linkreset' ? l.a !== me && l.b !== me : !((l.a === me && l.b === d.arg) || (l.a === d.arg && l.b === me));
-          });
-          if (name === 'ed-linkset') {
-            var autoKind = R.lineRhyme(dict, me, d.arg, []);           // what the dictionary says on its own
-            var nowOn = !!R.lineRhyme(dict, me, d.arg, x.rhyme_links);
-            if (nowOn === !!autoKind) links.push({ a: me, b: d.arg, on: !nowOn });   // differs from automatic: remember it
-          }
-          x.rhyme_links = links;
-          queue(x.id, { rhyme_links: links }); flush();
+          var end = R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_letters).lines[state.lyLine].end;
+          var letters = Object.assign({}, x.rhyme_letters || {});
+          if (d.arg === 'auto') delete letters[end]; else letters[end] = d.arg;
+          x.rhyme_letters = letters;
+          queue(x.id, { rhyme_letters: letters }); flush();
           break;
         }
-        case 'ed-add': state.sheet = 'ed-add'; break;
-        case 'ed-addtag':
-          o = order().concat(['NEW']);
-          state.sheet = null;
-          change(store.addSection(song.id, { tag: d.arg }, o).then(function (r) {
-            secs[r.section.id] = r.section; song.section_order = r.order;
-            state.lyEditing = r.section.id; afterRender.focusNext = true;
-          }));
-          return true;
         case 'ed-tag':
           if (!x) break;
           x.tag = d.arg; queue(x.id, { tag: d.arg }); flush();

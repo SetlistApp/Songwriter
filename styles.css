@@ -443,8 +443,15 @@
 .sw-lr.sw-vowel.sw-c1 { color: #e3a83b; } .sw-lr.sw-vowel.sw-c2 { color: #4fae7a; } .sw-lr.sw-vowel.sw-c3 { color: #d9704a; } .sw-lr.sw-vowel.sw-c0 { color: #6fa3d8; }
 /* Tap the counts + letter to choose rhymes for a line */
 .sw-lg { display: flex; align-items: center; min-height: 32px; padding: 0 0 0 6px; flex-shrink: 0; }
-.sw-mitem.sw-link i { display: inline-block; width: 20px; font-style: normal; color: var(--sw-gold); }
-.sw-mitem.sw-link.sw-on { color: var(--sw-text); }
+/* Rhyme letter picker */
+.sw-letters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 12px; }
+.sw-letters button {
+  min-height: 52px; border-radius: 10px; background: var(--sw-surface); border: 1px solid var(--sw-line);
+  font-family: var(--sw-display); font-weight: 600; font-size: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+.sw-letters button small { font-family: var(--sw-body); font-weight: 400; font-size: 10.5px; color: var(--sw-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+.sw-letters button.sw-on { background: var(--sw-gold); border-color: var(--sw-gold); color: var(--sw-bg); }
+.sw-letters button.sw-on small { color: var(--sw-bg); }
 
 /* Typing: a plain textarea, with the counts and letters lined up beside each line */
 .sw-tawrap { position: relative; }

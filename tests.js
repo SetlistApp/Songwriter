@@ -241,8 +241,12 @@
     check('Close vowels: Perfect stays exact (thing / sing perfect, thing / mean not)', [R.rhymeType(D, 'thing', 'sing'), R.rhymes(D, 'thing', 0).some(function (r) { return r.word === 'mean'; })], ['perfect', false]);
     var ks = R.rhymeScheme(D, ['my heart', 'a star', 'one thing', 'so mean']);
     check('Lines: vowel rhymes get a letter too (heart / star dotted, thing / mean dashed)', [ks.scheme, ks.lines[1].kind, ks.lines[3].kind], ['AABB', 'vowel', 'family']);
-    check('Lines: a link you set makes any two endings rhyme', R.rhymeScheme(D, ['say skrrt', 'we fly'], [{ a: 'skrrt', b: 'fly', on: true }]).lines.map(function (l) { return l.kind; }), ['perfect', 'linked']);
-    check('Lines: unlinking stops a rhyme the dictionary found', R.rhymeScheme(D, ['one thing', 'so mean'], [{ a: 'mean', b: 'thing', on: false }]).scheme, '');
+    var chorusL = ['its those things that you tell me', 'without saying a thing', 'just that look that you give me', 'and I know what you mean'];
+    check('Lines: each line pairs with its best rhyme (me/me + thing/mean = ABAB, not AAAA)', R.rhymeScheme(D, chorusL).scheme, 'ABAB');
+    check('Lines: letters you pick are kept (mean = C, thing = C)', R.rhymeScheme(D, chorusL, { mean: 'C', thing: 'C' }).scheme, 'ACAC');
+    check('Lines: picking the same letter rhymes any two endings', R.rhymeScheme(D, ['say skrrt', 'we fly'], { skrrt: 'A', fly: 'A' }).lines.map(function (l) { return l.kind; }), ['picked', 'picked']);
+    check('Lines: "-" means no letter, even if the dictionary found a rhyme', R.rhymeScheme(D, ['one thing', 'so mean'], { mean: '-' }).scheme, '');
+    check('Lines: automatic letters skip ones you picked (B picked → auto group is A, then C)', R.rhymeScheme(D, ['the night', 'so bright', 'my fear', 'is here', 'what you mean'], { mean: 'B' }).scheme, 'AACCB');
     check('Lines: hyphenated words count both parts (well-known = 2)', R.lineSyllables(D, 'well-known'), 2);
     check('Lines: punctuation and curly quotes are ignored', R.lineWords('“Stop!” she said—no, don’t.'), ['Stop', 'she', 'said', 'no', 'don’t']);
 
