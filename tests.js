@@ -229,6 +229,37 @@
     check('Vulgar: stop hides nothing', stopM.best.synonyms.hidden, []);
     check('Vulgar: a vulgar search shows everything', (function (m) { return [m.vulgarSearch, m.best.synonyms.hidden.length]; })(R.meanings(TH, D, 'fuck')), [true, 0]);
     check('Vulgar: swear words are known even outside WordNet labels', [R.isVulgar(TH, 'shit'), R.isVulgar(TH, 'stop')], [true, false]);
+    // --- Lyric lines: syllables & rhyme letters ---
+    var verse = ['Small town, one road, one parking lot', 'Ten years of waiting at the light', 'Engine running, couldn’t stop', 'Maybe I’ll be gone tonight'];
+    var vs = R.rhymeScheme(D, verse);
+    check('Lines: syllables per line (8 8 7 7)', vs.lines.map(function (l) { return l.syllables; }), [8, 8, 7, 7]);
+    check('Lines: lot / stop share a letter as a near (family) rhyme → ABAB', [vs.scheme, vs.lines[2].near, vs.lines[3].near], ['ABAB', true, false]);
+    check('Lines: a letter needs two lines (AA·, not AAB)', R.rhymeScheme(D, ['I saw the light', 'it felt so right', 'and then the rain']).scheme, 'AA·');
+    check('Lines: blank lines are skipped in the scheme', R.rhymeScheme(D, ['the night', '', 'so bright']).scheme, 'AA');
+    check('Lines: same last word counts as a rhyme', R.rhymeScheme(D, ['I love you', 'I need you']).scheme, 'AA');
+    check('Close vowels: thing / mean, sing / seen, good / food are near (family) rhymes', [R.rhymeType(D, 'thing', 'mean'), R.rhymeType(D, 'sing', 'seen'), R.rhymeType(D, 'good', 'food')], ['family', 'family', 'family']);
+    check('Close vowels: Perfect stays exact (thing / sing perfect, thing / mean not)', [R.rhymeType(D, 'thing', 'sing'), R.rhymes(D, 'thing', 0).some(function (r) { return r.word === 'mean'; })], ['perfect', false]);
+    var ks = R.rhymeScheme(D, ['my heart', 'a star', 'one thing', 'so mean']);
+    check('Lines: vowel rhymes get a letter too (heart / star dotted, thing / mean dashed)', [ks.scheme, ks.lines[1].kind, ks.lines[3].kind], ['AABB', 'vowel', 'family']);
+    check('Lines: a link you set makes any two endings rhyme', R.rhymeScheme(D, ['say skrrt', 'we fly'], [{ a: 'skrrt', b: 'fly', on: true }]).lines.map(function (l) { return l.kind; }), ['perfect', 'linked']);
+    check('Lines: unlinking stops a rhyme the dictionary found', R.rhymeScheme(D, ['one thing', 'so mean'], [{ a: 'mean', b: 'thing', on: false }]).scheme, '');
+    check('Lines: hyphenated words count both parts (well-known = 2)', R.lineSyllables(D, 'well-known'), 2);
+    check('Lines: punctuation and curly quotes are ignored', R.lineWords('“Stop!” she said—no, don’t.'), ['Stop', 'she', 'said', 'no', 'don’t']);
+
+    // --- Converting old plain-text lyrics into sections (songs.js) ---
+    var I = SW.songs.importLyrics;
+    var shape = function (txt) { return I(txt).map(function (s) { return s.tag + (s.repeatOf !== null ? '↻' + s.repeatOf : '') + (s.body ? ':' + s.body.split('\n').length : ''); }).join(' '); };
+    check('Import: labels split sections; "Repeat Chorus x2" and a bare [Chorus] repeat it',
+      shape('Verse 1:\nOne road\nTen years\n\nChorus\nDrive on\nLeave the map\n\nVerse 2\nAnother line\nOne more\n\n[Chorus]\n\nBridge: we drove all night\nand never stopped\n\nRepeat Chorus x2'),
+      'Verse:2 Chorus:2 Verse:2 Chorus↻1 Bridge:2 Chorus↻1');
+    check('Import: without labels, a block that appears twice is the Chorus', shape('a one\na two\n\nhook one\nhook two\n\nb one\nb two\n\nhook one\nhook two'), 'Verse:2 Chorus:2 Verse:2 Chorus↻1');
+    check('Import: chord-only lines are left out', I('G        D/F#\nSmall town\nAm7 | F | C/E\nTen years').map(function (s) { return s.body; }), ['Small town\nTen years']);
+    check('Import: chord lines recognised (G D/F# Em7 | Cmaj7, N.C.)', ['G  D/F#  Em7 | Cmaj7', 'N.C.', 'Bb  F/A  Gm', 'Asus4 x2'].map(SW.songs.isChordLine), [true, true, true, true]);
+    check('Import: lyric lines aren\'t mistaken for chords (A day, Be mine)', ['A day in the life', 'Be mine', 'Em and I'].map(SW.songs.isChordLine), [false, false, false]);
+    check('Import: custom labels keep their name; empty labeled sections stay', shape('[Intro riff]\nG D\n(Chorus - half time)\nslow words\nOutro:\nfade out'), 'Intro riff Chorus - half time:1 Outro:1');
+    check('Import: a long run-on block is split where lines repeat', shape(['v1', 'v2', 'v3', 'c1', 'c2', 'w1', 'w2', 'w3', 'c1', 'c2'].map(function (x) { return 'line ' + x; }).join('\n')), 'Verse:3 Chorus:2 Verse:3 Chorus↻1');
+    check('Import: empty text gives no sections', I('  \n\n'), []);
+
     // --- Definitions (definitions.js) ---
     var DF = R.loadDefinitions(SW.DEFINITIONS);
     var loveD = R.definitions(DF, TH, 'love');
@@ -250,6 +281,7 @@
     require('./words.js');
     require('./thesaurus.js');
     require('./definitions.js');
+    require('./songs.js');
     require('./rhymes.js');
     var results = SW.runTests(), failed = results.filter(function (r) { return !r.ok; });
     failed.forEach(function (r) { console.log('FAIL  ' + r.name + '\n      got:  ' + JSON.stringify(r.got) + '\n      want: ' + JSON.stringify(r.want)); });

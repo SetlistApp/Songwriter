@@ -74,7 +74,10 @@
   }
 
   // "cot" and "caught" sound the same to most American ears, so AA and AO match beyond Perfect.
-  var nearVowel = function (v) { return v === 'AO' ? 'AA' : v; };
+  // Vowels that sound alike when sung count as one beyond Perfect: "cot"/"caught" (AA/AO), "ih"/"ee"
+  // (thing/mean: "-ing" is usually sung "-een"), and "oo" as in good/food (UH/UW).
+  var CLOSE = { AO: 'AA', IY: 'IH', UW: 'UH' };
+  var nearVowel = function (v) { return CLOSE[v] || v; };
   var sameFamily = function (a, b) { return a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]); };
 
   /** How two tails rhyme: 0 perfect, 1 family, 2 vowel, or -1 not at all. */
@@ -155,6 +158,74 @@
     }
     found.sort(function (x, y) { return x.t - y.t || x.rank - y.rank; });
     return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
+  }
+
+  // ---------- Lyric lines: syllables and rhyme letters ----------
+  /** The words of a lyric line, as typed ("Engine running, couldn't stop" → Engine, running, couldn't, stop). */
+  function lineWords(line) { return (String(line).match(/[A-Za-z‘’'][A-Za-z‘’'-]*/g) || []).filter(function (w) { return /[a-z]/i.test(w); }); }
+
+  /** Syllables in a line (words the list doesn't know are guessed from spelling). */
+  function lineSyllables(dict, line) {
+    return lineWords(line).reduce(function (n, w) {
+      return n + w.split('-').reduce(function (m, part) { return m + (part ? syllables(dict, part) : 0); }, 0);
+    }, 0);
+  }
+
+  /** A user's own rhyme choice for two words in a section: true (rhyme), false (don't), undefined (let the dictionary decide). */
+  function linkOf(links, a, b) {
+    var hit = (links || []).filter(function (l) { return (l.a === a && l.b === b) || (l.a === b && l.b === a); })[0];
+    return hit ? hit.on : undefined;
+  }
+  var LEVEL = { perfect: 0, linked: 0, family: 1, vowel: 2 };
+
+  /** How two line-ending words rhyme for the editor's letters: 'perfect' | 'linked' | 'family' | 'vowel' | null. */
+  function lineRhyme(dict, a, b, links) {
+    if (a === b) return 'perfect';
+    var l = linkOf(links, a, b);
+    if (l === true) return 'linked';
+    if (l === false) return null;
+    return rhymeType(dict, a, b);
+  }
+
+  /** Rhyme letters for a section's lines (A, B, C… by first appearance). Line endings that rhyme
+      share a letter; kind says how closely: perfect or linked (solid), family (dashed), vowel (dotted).
+      links = the section's own choices [{ a, b, on }] (words you linked or unlinked yourself).
+      Blank lines get no letter; neither does a line whose ending rhymes with nothing.
+      Returns { lines: [{ letter, kind, near, word, end, syllables }], scheme: "ABAB" }. */
+  function rhymeScheme(dict, lines, links) {
+    var groups = [];   // { letter, words: [] }
+    var out = lines.map(function (line) {
+      var words = lineWords(line), last = words.length ? clean(words[words.length - 1]) : '';
+      var info = { letter: '', kind: '', near: false, word: words.length ? words[words.length - 1] : '', end: last, syllables: lineSyllables(dict, line) };
+      if (!last) return info;
+      // Join the group this ending rhymes with most closely (a word you linked counts as perfect).
+      var best = null;
+      groups.forEach(function (g) {
+        var kind = null;
+        g.words.forEach(function (other) {
+          var t = lineRhyme(dict, last, other, links);
+          if (t && (!kind || LEVEL[t] < LEVEL[kind])) kind = t;
+        });
+        if (kind && (!best || LEVEL[kind] < LEVEL[best.kind])) best = { g: g, kind: kind };
+      });
+      if (best) { best.g.words.push(last); info.letter = best.g.letter; info.kind = best.kind; return info; }
+      var letter = String.fromCharCode(65 + (groups.length % 26));
+      groups.push({ letter: letter, words: [last] });
+      info.letter = letter; info.kind = 'perfect';   // the first line of a group
+      return info;
+    });
+    // A letter only means something if at least two lines share it.
+    var count = {};
+    out.forEach(function (l) { if (l.letter) count[l.letter] = (count[l.letter] || 0) + 1; });
+    out.forEach(function (l) { if (l.letter && count[l.letter] < 2) { l.letter = ''; l.kind = ''; } });
+    // Re-letter in order of appearance so the scheme reads ABAB, not ACAC.
+    var map = {}, next = 0;
+    out.forEach(function (l) {
+      if (l.letter) { if (!map[l.letter]) map[l.letter] = String.fromCharCode(65 + next++ % 26); l.letter = map[l.letter]; }
+      l.near = l.kind === 'family' || l.kind === 'vowel';
+    });
+    var scheme = out.filter(function (l, i) { return lines[i].trim(); }).map(function (l) { return l.letter || '·'; }).join('');
+    return { lines: out, scheme: /[A-Z]/.test(scheme) ? scheme : '' };
   }
 
   // ---------- Synonyms & antonyms (Datamuse) ----------
@@ -365,6 +436,7 @@
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
+    lineWords: lineWords, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,
     loadThesaurus: loadThesaurus, baseWord: baseWord, loadDefinitions: loadDefinitions, definitions: definitions, meanings: meanings, isVulgar: isVulgar, band: band
   };
 })(typeof window !== 'undefined' ? window : globalThis);

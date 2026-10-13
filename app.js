@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta11';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta12';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -21,7 +21,7 @@
   const DATAMUSE = 'https://api.datamuse.com/words';   // extra related words (needs internet)
   const STRICT_HELP = [
     'Same vowel and same ending sound.',
-    'Same vowel, and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
+    'Same or close vowel (thing / mean), and the ending sounds are close cousins: p t k, b d g, m n ng, f s sh th ch, v z j.',
     'Just the vowel sounds match.'
   ];
   // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
@@ -237,6 +237,7 @@
     /** The Key & scale pop-up. Changes show right away behind it; Done or tapping outside closes it. */
     function sheet() {
       if (state.sheet === 'word') return wordSheet();
+      if (state.sheet && state.sheet.indexOf('ed-') === 0) return editor.sheet();
       if (!state.sheet) return '';
       const choices = T.keyChoices(state.scaleId);
       const cur = choices[state.tonic.pc];
@@ -395,7 +396,8 @@
       loadScript(DEFINITIONS_URL, () => { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; render(); }, () => { defState = 'idle'; render(); });
     }
 
-    function lyricsPage() {
+    /** The Find rhymes box (top of the songs list). */
+    function findBox() {
       needWords();
       const recent = state.lyRecent.length
         ? `<div class="sw-sub">Recent</div><div class="sw-words">${state.lyRecent.map((w) =>
@@ -405,9 +407,8 @@
           <input class="sw-input" name="q" type="search" value="${esc(state.lyQuery)}" placeholder="Type a word" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
           <button class="sw-findbtn" type="submit">Find</button>
         </form>
-        <div class="sw-footnote">Rhymes, near rhymes, synonyms and antonyms. Rhymes work offline.</div>
-        ${recent}
-        <div class="sw-soon"><b>Coming next:</b> write songs here, with syllable counts and rhyme colors, saved online and shared between you two.</div>`;
+        <div class="sw-footnote">Rhymes, synonyms, antonyms and meanings. Works offline.</div>
+        ${recent}`;
     }
 
     function lookup(word, fromSheet) {
@@ -622,7 +623,7 @@
       const drawing = instrumentDrawing(mode);
       let page;
       if (state.area === 'lyrics') {
-        page = `<div class="sw-page sw-lyrics">${header()}${pageTabs()}${lyricsPage()}</div>`;
+        page = `<div class="sw-page sw-lyrics">${header()}${pageTabs()}${editor.page()}</div>`;
       } else if (state.page === 'voicing') {
         page = mode === 'land'
           ? `<div class="sw-page">${voicingPage(mode)}</div>`
@@ -643,6 +644,7 @@
         </div>`;
       }
       el.innerHTML = `<div class="sw-app sw-${mode}">${page}${sheet()}</div>`;
+      if (state.area === 'lyrics') editor.afterRender();
       lockPageScroll(!!state.sheet);
 
       // Keep the fretboard/keyboard scrolled where it was; start the piano at middle C.
@@ -717,7 +719,7 @@
           break;
         case 'word-retry': fetchWords(state.wordTab, state.word); break;
         case 'strict': state.strict = +arg; break;
-        default: if (!vlAct(name, data)) return;
+        default: if (!vlAct(name, data) && !editor.act(name, data)) return;
       }
       render();
     }
@@ -967,6 +969,17 @@
     document.addEventListener('pointerup', endSheetDrag);
     document.addEventListener('pointercancel', endSheetDrag);
 
+    // ---------- Lyrics: songs list and editor (editor.js) ----------
+    const editor = SW.editor.create({
+      el, state, render, esc, findBox,
+      dict: () => { needWords(); return dictState === 'ready' ? dict : null; },
+      openWord: (word, tab) => {
+        lookup(word, false);
+        state.wordTab = tab;
+        if (tab === 'syn' || tab === 'ant') fetchWords(tab, state.word);
+      }
+    });
+
     // ---------- Start ----------
     let resizeTimer;
     root.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 120); });
@@ -981,7 +994,7 @@
         try { root.sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state)); } catch (e) { /* private mode: fine */ }
       },
       /** True while a chord is being dragged (don't refresh mid-drag). */
-      isBusy: () => !!(drag && drag.active)
+      isBusy: () => !!(drag && drag.active) || editor.isBusy()
     };
   }
 
