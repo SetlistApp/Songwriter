@@ -247,6 +247,12 @@
     check('Lines: picking the same letter rhymes any two endings', R.rhymeScheme(D, ['say skrrt', 'we fly'], { skrrt: 'A', fly: 'A' }).lines.map(function (l) { return l.kind; }), ['picked', 'picked']);
     check('Lines: "-" means no letter, even if the dictionary found a rhyme', R.rhymeScheme(D, ['one thing', 'so mean'], { mean: '-' }).scheme, '');
     check('Lines: automatic letters skip ones you picked (B picked → auto group is A, then C)', R.rhymeScheme(D, ['the night', 'so bright', 'my fear', 'is here', 'what you mean'], { mean: 'B' }).scheme, 'AACCB');
+    var ul = function (lines, picked) { var s = R.rhymeScheme(D, lines, picked); return s.lines.map(function (l, i) { return l.underline.map(function (u) { return lines[i].slice(u.start, u.end) + ':' + u.letter; }).join('+'); }); };
+    check('Multi-syllable: broken / hopin\' rhyme (near)', R.rhymeScheme(D, ['I keep it broken', 'still I keep on hopin’']).lines.map(function (l) { return l.letter + l.kind; }), ['Afamily', 'Afamily']);
+    check('Multi-syllable: "hold it" / "golden" underline both words of "hold it"', ul(['you told me hold it', 'the days were golden']), ['hold it:A', 'golden:A']);
+    check('Multi-syllable: tell me / sell me underline the whole ending', ul(['you tell me', 'you sell me']), ['tell me:A', 'sell me:A']);
+    check('Multi-syllable: tell me / give me still rhyme on "me" (one word)', ul(['you tell me', 'you give me']), ['me:A', 'me:A']);
+    check('Inner rhymes: words you letter mid-line get underlined', ul(['the fire in my eyes', 'a liar in disguise'], { fire: 'C', liar: 'C' }), ['fire:C+eyes:A', 'liar:C+disguise:A']);
     check('Lines: hyphenated words count both parts (well-known = 2)', R.lineSyllables(D, 'well-known'), 2);
     check('Lines: punctuation and curly quotes are ignored', R.lineWords('“Stop!” she said—no, don’t.'), ['Stop', 'she', 'said', 'no', 'don’t']);
 

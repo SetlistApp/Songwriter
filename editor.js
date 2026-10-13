@@ -179,15 +179,23 @@
       return lines.map(function (line, i) {
         if (!line.trim()) return '<div class="sw-ln sw-blank"></div>';
         var info = sch ? sch.lines[i] : { letter: '', syllables: '' };
-        var text = esc(line);
-        if (info.letter && info.word) {
-          var at = line.lastIndexOf(info.word);
-          text = esc(line.slice(0, at)) + `<span class="sw-u ${kindClass(info)}">${esc(info.word)}</span>` + esc(line.slice(at + info.word.length));
-        }
+        var text = underlined(line, info);
         // The counts and letter are a button: tap to pick this line's rhyme letter.
         return `<div class="sw-ln"><span class="sw-lt">${text}</span><button class="sw-lg" data-act="ed-link" data-id="${x.id}" data-line="${i}" aria-label="Choose the rhyme letter for this line"><span class="sw-ls">${info.syllables}</span>${letterChip(info)}</button></div>`;
       }).join('');
     }
+    /** A line as HTML with its rhyme underlines: the rhyming ending (one or more words) and any
+        word you gave a letter yourself. */
+    function underlined(line, info) {
+      var out = '', at = 0;
+      ((info && info.underline) || []).forEach(function (u) {
+        if (u.start < at) return;
+        out += esc(line.slice(at, u.start)) + `<span class="sw-u ${kindClass(u)}">${esc(line.slice(u.start, u.end))}</span>`;
+        at = u.end;
+      });
+      return out + esc(line.slice(at));
+    }
+
     /** Color by letter; outline by how closely it rhymes: solid (perfect, or a letter you picked), dashed (family), dotted (vowel). */
     function kindClass(info) {
       return `sw-c${info.letter.charCodeAt(0) % 4}${info.kind === 'family' ? ' sw-near' : info.kind === 'vowel' ? ' sw-vowel' : ''}`;   // perfect & picked: solid
@@ -252,25 +260,31 @@
         <div class="sw-sheet"><div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div></div>${body}</div>`;
     }
 
-    /** Pick this line's rhyme letter: Auto, A, B, C… or None. Same letter = they rhyme. */
+    /** Pick a word's rhyme letter: Auto, A, B, C… or None. Same letter = they rhyme. Works for line
+        endings (tap the letter) and any other word (Letter on the word bar), for inner rhymes. */
     function letterMenu() {
-      var x = secs[state.lyMenu], dict = ctx.dict();
-      if (!x || !dict) return '';
+      var x = secs[state.lyMenu], dict = ctx.dict(), word = state.lyPickWord;
+      if (!x || !dict || !word) return '';
       var picked = x.rhyme_letters || {};
       var sch = R.rhymeScheme(dict, x.body.split('\n'), picked);
-      var me = sch.lines[state.lyLine];
-      if (!me || !me.end) return '';
-      // Which line endings already use each letter, as a hint ("A · me").
-      var users = {};
-      sch.lines.forEach(function (l) { if (l.letter && l.end !== me.end) (users[l.letter] = users[l.letter] || []).indexOf(l.end) < 0 && users[l.letter].push(l.end); });
-      var maxUsed = sch.lines.reduce(function (m, l) { return l.letter ? Math.max(m, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(l.letter)) : m; }, -1);
+      var mine = sch.lines.filter(function (l) { return l.end === word && l.letter; })[0];
+      var me = { end: word, letter: mine ? mine.letter : '' };
+      // Which words already use each letter, as a hint ("A · me").
+      var users = {}, maxUsed = -1, lines = x.body.split('\n');
+      sch.lines.forEach(function (l, i) {
+        l.underline.forEach(function (u) {
+          var w = R.clean(lines[i].slice(u.start, u.end).split(/\s+/).pop());
+          maxUsed = Math.max(maxUsed, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(u.letter));
+          if (w !== word) (users[u.letter] = users[u.letter] || []).indexOf(w) < 0 && users[u.letter].push(w);
+        });
+      });
       var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, Math.min(26, Math.max(4, maxUsed + 2))).split('');
       var cur = picked[me.end] || 'auto';
       var btn = function (val, label, hint) {
         return `<button class="${cur === val ? 'sw-on' : ''}" data-act="ed-letter" data-arg="${val}">${label}${hint ? `<small class="sw-keepcase">${esc(hint)}</small>` : ''}</button>`;
       };
       return `<div class="sw-sheet-title"><span class="sw-keepcase">Rhyme letter for “${esc(me.end)}”</span><button data-act="close-sheet">Done</button></div>
-        <div class="sw-whelp">Lines with the same letter rhyme. Auto lets the dictionary decide${cur === 'auto' && me.letter ? ` (now ${me.letter})` : ''}.</div>
+        <div class="sw-whelp">Words with the same letter rhyme. ${mine ? 'Auto lets the dictionary decide' + (cur === 'auto' && me.letter ? ` (now ${me.letter})` : '') + '.' : 'Give a word in the middle of a line a letter to mark an inner rhyme.'}</div>
         <div class="sw-letters">${btn('auto', 'Auto')}${letters.map(function (L) { return btn(L, L, (users[L] || []).slice(0, 2).join(', ')); }).join('')}${btn('-', 'None')}</div>`;
     }
 
@@ -383,11 +397,7 @@
       var id = ta.dataset.body, wrap = ta.parentNode, mirror = wrap.querySelector('.sw-mirror'), gutter = wrap.querySelector('[data-gutter]');
       var lines = ta.value.split('\n');
       var dict = ctx.dict(), sch = dict ? R.rhymeScheme(dict, lines, secs[id] && secs[id].rhyme_letters) : null;
-      mirror.innerHTML = lines.map(function (l, i) {
-        var info = sch && sch.lines[i], at = info && info.letter && info.word ? l.lastIndexOf(info.word) : -1;
-        if (at < 0) return `<div>${esc(l) || '&#8203;'}</div>`;
-        return `<div>${esc(l.slice(0, at))}<span class="sw-u ${kindClass(info)}">${esc(info.word)}</span>${esc(l.slice(at + info.word.length))}</div>`;
-      }).join('');
+      mirror.innerHTML = lines.map(function (l, i) { return `<div>${underlined(l, sch && sch.lines[i]) || '&#8203;'}</div>`; }).join('');
       ta.style.height = 'auto';
       ta.style.height = Math.max(ta.scrollHeight, mirror.offsetHeight + 4) + 'px';
       var tops = [].map.call(mirror.children, function (d) { return d.offsetTop; });
@@ -425,7 +435,7 @@
       var dict = ctx.dict(), syl = dict ? R.syllables(dict, w) : 0;
       bar.innerHTML = `<b class="sw-keepcase">${esc(w)}</b>${syl ? `<small>${syl} syl</small>` : ''}
         <span class="sw-wbtns">${[['rhymes', 'Rhymes'], ['syn', 'Syn'], ['ant', 'Ant'], ['def', 'Meaning']].map(function (t) {
-          return `<button data-act="ed-word" data-arg="${t[0]}">${t[1]}</button>`; }).join('')}</span>`;
+          return `<button data-act="ed-word" data-arg="${t[0]}">${t[1]}</button>`; }).join('')}<button class="sw-wletter" data-act="ed-pickword" aria-label="Give this word a rhyme letter">A·B</button></span>`;
     }
     /** Keep the word bar just above the phone's keyboard. */
     function placeBar(bar) {
@@ -519,11 +529,26 @@
           showCounts = !showCounts;
           try { root.localStorage.setItem(COUNTS_KEY, showCounts ? 'on' : 'off'); } catch (e) { /* fine */ }
           break;
-        case 'ed-link': flush(); state.lyMenu = d.id; state.lyLine = +d.line; state.sheet = 'ed-link'; break;
+        case 'ed-link': {   // tapped a line's letter: pick the letter for that line's last word
+          flush();
+          var dk = ctx.dict(), sx = secs[d.id];
+          if (!dk || !sx) break;
+          state.lyMenu = d.id;
+          state.lyPickWord = R.rhymeScheme(dk, sx.body.split('\n'), sx.rhyme_letters).lines[+d.line].end;
+          state.sheet = 'ed-link';
+          break;
+        }
+        case 'ed-pickword': {   // "Letter" on the word bar: pick the letter for the word at the cursor
+          var tb = ctx.el.querySelector('[data-body]');
+          var pw = tb ? wordAtCursor(tb) : barWord;
+          if (!pw || !state.lyEditing) break;
+          flush();
+          state.lyMenu = state.lyEditing; state.lyPickWord = pw; state.sheet = 'ed-link';
+          break;
+        }
         case 'ed-letter': {
-          var dict = ctx.dict();
-          if (!x || !dict) break;
-          var end = R.rhymeScheme(dict, x.body.split('\n'), x.rhyme_letters).lines[state.lyLine].end;
+          var end = state.lyPickWord;
+          if (!x || !end) break;
           var letters = Object.assign({}, x.rhyme_letters || {});
           if (d.arg === 'auto') delete letters[end]; else letters[end] = d.arg;
           x.rhyme_letters = letters;

@@ -490,6 +490,7 @@
 .sw-wordbar b { font-family: var(--sw-display); font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sw-wordbar small { font-family: var(--sw-mono); font-size: 10px; color: var(--sw-dim); white-space: nowrap; }
 .sw-wbtns { margin-left: auto; display: flex; gap: 5px; flex-shrink: 0; }
+.sw-wbtns .sw-wletter { color: var(--sw-gold); }
 .sw-wbtns button {
   min-height: 34px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--sw-line); background: var(--sw-surface);
   font-family: var(--sw-display); font-weight: 600; font-size: 12.5px;

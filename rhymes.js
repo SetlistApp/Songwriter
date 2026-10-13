@@ -173,6 +173,11 @@
 
   var LEVEL = { perfect: 0, family: 1, vowel: 2 };
   var LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  // Small words a singer doesn't lean on at the end of a line ("hold IT", "tell ME"): the rhyme
+  // starts on the word before them.
+  var LIGHT = {};
+  ('a an the to of in on at for with and or but is was am are be been it me you him her them us ' +
+    'my your his its our their ya em \'em').split(' ').forEach(function (w) { LIGHT[w] = true; });
 
   /** How two line-ending words rhyme: 'perfect' | 'family' | 'vowel' | null. */
   function lineRhyme(dict, a, b) {
@@ -180,18 +185,48 @@
     return rhymeType(dict, a, b);
   }
 
+  /** Words of a line with where they are: [{ word (as typed), key (cleaned), start, end }]. */
+  function wordSpans(line) {
+    var out = [], re = /[A-Za-z‘’'][A-Za-z‘’'-]*/g, m;
+    while ((m = re.exec(line))) if (/[a-z]/i.test(m[0])) out.push({ word: m[0], key: clean(m[0]), start: m.index, end: m.index + m[0].length });
+    return out;
+  }
+
+  /** A line's multi-syllable ending: the sounds from its last stressed syllable to the end, reading
+      light words at the end ("it", "me") as unstressed, so "hold it" ends "-old it" like "golden".
+      Returns { tail, from (index of the first word in it), multi (more than one word) } or null. */
+  function phraseEnd(dict, spans) {
+    var phones = [], owner = [];
+    for (var k = spans.length - 1; k >= 0 && k >= spans.length - 4; k--) {
+      var i = find(dict, spans[k].key);
+      if (i < 0) return null;
+      var ph = dict.phones[i].map(function (p) { return LIGHT[spans[k].key] && /\d$/.test(p) ? p.slice(0, -1) + '0' : p; });
+      phones = ph.concat(phones); owner = ph.map(function () { return k; }).concat(owner);
+      if (!LIGHT[spans[k].key] && ph.some(function (p) { return /[12]$/.test(p); })) {
+        var st = tailStart(phones);
+        return { tail: tail(phones), from: owner[st], multi: owner[st] < spans.length - 1 };
+      }
+    }
+    return null;
+  }
+
   /** Rhyme letters for a section's lines.
-      Each line pairs with the line(s) it rhymes with *best* (so "thing" goes with "mean", not with "me"
-      on a looser vowel match), and paired lines share a letter, A, B, C… in order of appearance.
-      kind says how closely: perfect (solid), family (dashed), vowel (dotted), picked (you chose it).
-      picked = letters you chose yourself, by line-ending word: { mean: 'B', skrrt: '-' } ('-' = no letter).
-      Your letters are kept as they are; automatic groups take the next free letters.
-      Returns { lines: [{ letter, kind, near, word, end, syllables }], scheme: "ABAB" }. */
+      Line endings are compared two ways and the closer match wins: the last words ("me" / "me"), and
+      the multi-syllable endings ("broken" / "hopin'", "hold it" / "golden"). Each line pairs with the
+      line(s) it rhymes with *best* (so "thing" goes with "mean", not with "me" on a looser match),
+      and paired lines share a letter, A, B, C… in order of appearance.
+      kind: perfect (solid), family (dashed), vowel (dotted), picked (you chose it).
+      picked = letters you chose yourself, by word: { mean: 'B', skrrt: '-' } ('-' = no letter). A
+      picked word in the middle of a line gets that letter's underline too (an inner rhyme you marked).
+      Returns { lines: [{ letter, kind, near, word, end, syllables, underline: [{ start, end, letter, kind }] }], scheme }. */
   function rhymeScheme(dict, lines, picked) {
     picked = picked || {};
     var info = lines.map(function (line) {
-      var words = lineWords(line), last = words.length ? clean(words[words.length - 1]) : '';
-      return { letter: '', kind: '', near: false, word: words.length ? words[words.length - 1] : '', end: last, syllables: lineSyllables(dict, line) };
+      var spans = wordSpans(line), last = spans.length ? spans[spans.length - 1] : null;
+      return {
+        letter: '', kind: '', near: false, word: last ? last.word : '', end: last ? last.key : '',
+        syllables: lineSyllables(dict, line), spans: spans, phrase: spans.length ? phraseEnd(dict, spans) : null, from: spans.length - 1, underline: []
+      };
     });
     var n = info.length, parent = info.map(function (x, i) { return i; }), mark = {};   // mark[root] = a picked letter
     var root = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
@@ -202,6 +237,16 @@
       if (mark[b]) mark[a] = mark[b];
     };
     var pickOf = function (i) { var p = info[i].end && picked[info[i].end]; return p && (p === '-' || LETTERS.indexOf(p) >= 0) ? p : null; };
+    /** How lines i and j rhyme: { kind, phrase } (phrase = it's the multi-syllable endings that match). */
+    var match = function (i, j) {
+      var a = info[i], b = info[j];
+      var w = lineRhyme(dict, a.end, b.end), best = w ? { kind: w, phrase: false } : null;
+      if (a.phrase && b.phrase && (a.phrase.multi || b.phrase.multi)) {
+        var lv = compareTails(a.phrase.tail, b.phrase.tail);
+        if (lv >= 0 && lv <= 2 && (!best || lv <= LEVEL[best.kind])) best = { kind: TYPES[lv], phrase: true };
+      }
+      return best;
+    };
     // Your letters first.
     var byLetter = {};
     info.forEach(function (x, i) {
@@ -217,13 +262,14 @@
       var best = null, partners = [];
       info.forEach(function (y, j) {
         if (j === i || !y.end || pickOf(j) === '-') return;
-        var k = lineRhyme(dict, x.end, y.end);
-        if (!k) return;
-        if (best === null || LEVEL[k] < LEVEL[best]) { best = k; partners = [j]; } else if (k === best) partners.push(j);
+        var m = match(i, j);
+        if (!m) return;
+        if (!best || LEVEL[m.kind] < LEVEL[best.kind]) { best = m; partners = [j]; } else if (m.kind === best.kind) partners.push(j);
       });
-      if (best === null) return;
-      x.kind = best;
-      partners.forEach(function (j) { join(i, j); });
+      if (!best) return;
+      x.kind = best.kind;
+      if (best.phrase) x.from = x.phrase.from;
+      partners.forEach(function (j) { join(i, j); if (best.phrase && !pickOf(j) && info[j].from === info[j].spans.length - 1) info[j].from = info[j].phrase.from; });
     });
     // Letters: picked groups keep theirs; other groups of 2+ lines get the next free letter in order.
     var size = {};
@@ -231,15 +277,27 @@
     var used = {}; Object.keys(mark).forEach(function (r) { if (root(+r) === +r) used[mark[r]] = true; });
     var auto = {}, next = 0;
     info.forEach(function (x, i) {
-      if (!x.end || pickOf(i) === '-') { x.kind = ''; return; }
-      var r = root(i);
-      if (mark[r]) { x.letter = mark[r]; if (!x.kind) x.kind = 'perfect'; }
-      else if (size[r] >= 2) {
-        if (!auto[r]) { while (used[LETTERS[next % 26]]) next++; auto[r] = LETTERS[next % 26]; used[auto[r]] = true; }
-        x.letter = auto[r];
-        if (!x.kind) x.kind = 'perfect';
-      } else x.kind = '';
+      if (!x.end || pickOf(i) === '-') { x.kind = ''; }
+      else {
+        var r = root(i);
+        if (mark[r]) { x.letter = mark[r]; if (!x.kind) x.kind = 'perfect'; }
+        else if (size[r] >= 2) {
+          if (!auto[r]) { while (used[LETTERS[next % 26]]) next++; auto[r] = LETTERS[next % 26]; used[auto[r]] = true; }
+          x.letter = auto[r];
+          if (!x.kind) x.kind = 'perfect';
+        } else x.kind = '';
+      }
       x.near = x.kind === 'family' || x.kind === 'vowel';
+      // What to underline: the rhyming ending (one word, or several for a multi-syllable rhyme)…
+      if (x.letter) x.underline.push({ start: x.spans[x.from].start, end: x.spans[x.spans.length - 1].end, letter: x.letter, kind: x.kind });
+      // …and any other word you gave a letter (an inner rhyme).
+      var endFrom = x.letter ? x.from : x.spans.length;
+      x.spans.forEach(function (s, k) {
+        var p = picked[s.key];
+        if (k < endFrom && p && p !== '-' && LETTERS.indexOf(p) >= 0) x.underline.push({ start: s.start, end: s.end, letter: p, kind: 'picked' });
+      });
+      x.underline.sort(function (a, b) { return a.start - b.start; });
+      delete x.spans; delete x.phrase; delete x.from;
     });
     var scheme = info.filter(function (l, i) { return lines[i].trim(); }).map(function (l) { return l.letter || '·'; }).join('');
     return { lines: info, scheme: /[A-Z]/.test(scheme) ? scheme : '' };
@@ -453,7 +511,7 @@
     encode: encode, decode: decode, tail: tail, compareTails: compareTails,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
-    lineWords: lineWords, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,
+    lineWords: lineWords, wordSpans: wordSpans, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,
     loadThesaurus: loadThesaurus, baseWord: baseWord, loadDefinitions: loadDefinitions, definitions: definitions, meanings: meanings, isVulgar: isVulgar, band: band
   };
 })(typeof window !== 'undefined' ? window : globalThis);
