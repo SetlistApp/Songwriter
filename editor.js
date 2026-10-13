@@ -436,15 +436,18 @@
         <span class="sw-wbtns">${[['rhymes', 'Rhymes'], ['syn', 'Syn'], ['ant', 'Ant'], ['def', 'Meaning']].map(function (t) {
           return `<button data-act="ed-word" data-arg="${t[0]}">${t[1]}</button>`; }).join('')}<button class="sw-wletter" data-act="ed-pickword" aria-label="Give this word a rhyme letter">A·B</button></span>`;
     }
-    /** Where the word bar goes. With an on-screen keyboard open, at the top of what's visible: newer
-        iPhones float their own ^ ˅ ✓ bar just above the keyboard, which would cover it there (and a
-        page can't move or hide that bar). Without one (a laptop), at the bottom. */
+    // Newer iPhones float their own ^ ˅ ✓ bar (~50pt) just above the keyboard, over the page; a page can't
+    // move or hide it. So on iPhone/iPad the word bar sits that much higher while the keyboard is up.
+    // (On older iOS, where that bar is part of the keyboard, this leaves a small gap.)
+    var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var IOS_BAR_PX = 50;
+
+    /** Keep the word bar just above the keyboard (and above iOS's own bar). */
     function placeBar(bar) {
       var vv = root.visualViewport;
       var keyboard = vv && vv.height < root.innerHeight * 0.8;   // the visible area shrank: a keyboard is up
-      bar.classList.toggle('sw-attop', !!keyboard);
-      if (keyboard) { bar.style.top = vv.offsetTop + 'px'; bar.style.bottom = 'auto'; }
-      else { bar.style.top = 'auto'; bar.style.bottom = vv ? Math.max(0, root.innerHeight - vv.height - vv.offsetTop) + 'px' : '0px'; }
+      var bottom = vv ? Math.max(0, root.innerHeight - vv.height - vv.offsetTop) : 0;
+      bar.style.bottom = (bottom + (keyboard && IOS ? IOS_BAR_PX : 0)) + 'px';
     }
     if (root.visualViewport) {
       var onVV = function () { var bar = ctx.el.querySelector('[data-wordbar]'); if (bar && !bar.hidden) placeBar(bar); };
