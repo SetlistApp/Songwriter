@@ -466,7 +466,8 @@
 .sw-ta { position: relative; z-index: 1; }   /* typing box on top… */
 .sw-mirror { position: absolute; left: 0; top: 0; z-index: 0; color: transparent; pointer-events: none; user-select: none; }   /* …its copy underneath draws only the rhyme underlines */
 .sw-gutter { position: absolute; right: 0; top: 0; width: 52px; pointer-events: none; }
-.sw-gl { position: absolute; right: 0; display: flex; align-items: center; height: 25.6px; margin-top: 2px; }
+.sw-gl { position: absolute; right: 0; display: flex; align-items: center; height: 25.6px; margin-top: 2px; pointer-events: auto; }
+.sw-gl::before { content: ""; position: absolute; inset: -4px -6px -4px -10px; }   /* bigger tap area */
 .sw-done {
   display: block; margin: 6px 0 0 auto; min-height: 34px; padding: 0 16px; border-radius: 9px;
   background: var(--sw-gold); color: var(--sw-bg); font-family: var(--sw-display); font-weight: 600; font-size: 13.5px;

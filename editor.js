@@ -394,7 +394,8 @@
       gutter.innerHTML = lines.map(function (l, i) {
         if (!l.trim() || !sch) return '';
         var info = sch.lines[i];
-        return `<div class="sw-gl" style="top:${tops[i]}px"><span class="sw-ls">${info.syllables}</span>${letterChip(info)}</div>`;
+        // Tappable while typing too: opens the rhyme letter picker for this line.
+        return `<button class="sw-gl" style="top:${tops[i]}px" data-act="ed-link" data-id="${id}" data-line="${i}" aria-label="Choose the rhyme letter for this line"><span class="sw-ls">${info.syllables}</span>${letterChip(info)}</button>`;
       }).join('');
       var sc = ctx.el.querySelector(`[data-scheme="${id}"]`);
       if (sc) sc.textContent = sch ? sch.scheme : '';
