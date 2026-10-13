@@ -442,7 +442,7 @@
 .sw-lr.sw-vowel { background: transparent; border: 1.5px dotted currentColor; }
 .sw-lr.sw-vowel.sw-c1 { color: #e3a83b; } .sw-lr.sw-vowel.sw-c2 { color: #4fae7a; } .sw-lr.sw-vowel.sw-c3 { color: #d9704a; } .sw-lr.sw-vowel.sw-c0 { color: #6fa3d8; }
 /* Tap the counts + letter to choose rhymes for a line */
-.sw-lg { display: flex; align-items: center; min-height: 32px; padding: 0 0 0 6px; flex-shrink: 0; }
+.sw-lg { display: flex; align-items: center; padding: 0 0 0 6px; flex-shrink: 0; }
 /* Rhyme letter picker */
 .sw-letters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 12px; }
 .sw-letters button {
@@ -521,8 +521,12 @@
 /* Same font and line height while reading and typing, so tapping in doesn't make the text jump */
 .sw-ln { font-size: 16px; line-height: 1.6; min-height: 25.6px; align-items: flex-start; }
 .sw-ln.sw-blank { min-height: 25.6px; }
-.sw-lt { padding: 2px 0; }
-.sw-lg { width: 56px; min-height: 29.6px; padding: 0; justify-content: flex-end; }
+/* Reading rows must be exactly as tall as the typing box's lines (16px × 1.6 = 25.6px, plus the box's
+   2px top padding), or the text jumps when you tap in to type. */
+.sw-lines { padding-top: 2px; }
+.sw-lt { padding: 0; }
+.sw-lg { width: 56px; height: 25.6px; padding: 0; justify-content: flex-end; position: relative; }
+.sw-lg::before { content: ""; position: absolute; inset: -4px -6px -4px -10px; }   /* bigger tap area, same layout */
 .sw-ta { min-height: 77px; }
 .sw-done { background: transparent; color: var(--sw-gold); padding: 0 2px; min-height: 30px; }
 .sw-addsec { width: auto; min-height: 40px; border: 0; padding: 0; text-align: left; }
