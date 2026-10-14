@@ -12,7 +12,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta29';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta30';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -26,7 +26,7 @@
   ];
   // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
   // Rhymes count per kind (perfect, family, vowel), so lots of perfect rhymes can't hide the family ones.
-  const FIRST = { rhymes: 30, syn: 40, ant: 40, def: 4 };
+  const FIRST = { rhymes: 30, phrases: 12, syn: 40, ant: 40, def: 4 };
   const FIRST_MEANINGS = 4;   // meaning groups shown before "Show more meanings"   // extra online words: common ones; rare ones are all listed after them
 
   function mount(el) {
@@ -469,22 +469,26 @@
 
     /** The rhyme list for the current strictness: help line, then results grouped by syllables. */
     function rhymeBody() {
-      const all = R.rhymes(dict, state.word, state.strict, state.wordPron);
+      const found = R.rhymes(dict, state.word, state.strict, state.wordPron) || [];
+      const all = found.filter((r) => !r.phrase), twoWord = found.filter((r) => r.phrase);
       const { list, more } = firstBatch('rhymes', all, (r) => r.type);
+      // Two-word rhymes ("golden" → "told him") in their own group.
+      const pb = firstBatch('phrases', twoWord);
+      const phraseGroup = twoWord.length ? `<div class="sw-sub">Two-word rhymes</div>${wordButtons(pb.list, (r) => `sw-t-${r.type}`)}${pb.more}` : '';
       const help = `<div class="sw-whelp"><b>${R.STRICTNESS[state.strict]}:</b> ${STRICT_HELP[state.strict]}</div>`;
-      if (!list.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
+      if (!list.length && !twoWord.length) return `${help}<div class="sw-wempty">Nothing at this strictness. Try sliding right.</div>`;
       const bySyl = {};
       list.forEach((r) => { (bySyl[r.syllables] = bySyl[r.syllables] || []).push(r); });
       const groups = Object.keys(bySyl).sort((a, b) => a - b).map((n) =>
         `<div class="sw-sub">${n} syllable${n > 1 ? 's' : ''}</div>${wordButtons(bySyl[n], (r) => `sw-t-${r.type}`)}`).join('');
       const kinds = R.TYPES.slice(0, state.strict + 1);
       const key = kinds.length > 1 ? `<div class="sw-wkey">${kinds.map((k) => `<span><i class="sw-t-${k}"></i>${k}</span>`).join('')}<span>most usable first</span></div>` : '';
-      return help + groups + more + key;
+      return help + groups + more + phraseGroup + key;
     }
 
     function rhymesTab() {
       if (dictState !== 'ready') return '<div class="sw-wempty">Loading the word list…</div>';
-      if (R.find(dict, state.word) < 0) {
+      if (!R.tailsOf(dict, state.word)) {
         return `<div class="sw-wempty">“${esc(state.word)}” isn’t in the word list, so there are no rhymes for it. Synonyms may still work.</div>`;
       }
       const stops = R.STRICTNESS.map((s, i) => `<button class="${i === state.strict ? 'sw-on' : ''}" data-act="strict" data-arg="${i}">${s}</button>`).join('');

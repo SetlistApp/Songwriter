@@ -190,6 +190,11 @@
     check('Voicing cousins: liv / did (both buzzy) and lot / loss (both airy) are family; liv / lift isn\'t', [R.rhymeType(D, 'did', 'give'), R.rhymeType(D, 'lot', 'loss'), R.rhymeType(D, 'give', 'lift') === 'family'], ['family', 'family', false]);
     check('…ranked after the closer family rhymes (stop: lot before loss)', words(R.rhymes(D, 'stop', 1)).indexOf('lot') < words(R.rhymes(D, 'stop', 1)).indexOf('loss'), true);
     check('No grammar-word penalty: did shows in the first 30 family rhymes for "liv"', words(R.rhymes(D, 'live', 1, R.pronunciations(D, 'live')[1].pron)).indexOf('did') < 30, true);
+    var two = function (w) { return R.rhymes(D, w, 1).filter(function (r) { return r.phrase; }).map(function (r) { return r.word; }); };
+    check('Two-word rhymes: golden → told him, hold him (the h drops: "told \'im")', ['told him', 'hold him'].every(function (p) { return two('golden').indexOf(p) >= 0; }), true);
+    check('Two-word rhymes: matter → sat her (perfect)', R.rhymes(D, 'matter', 0).some(function (r) { return r.phrase && r.word === 'sat her'; }), true);
+    check('Searching a phrase with him/her works: "told him" → golden, hold him', ['golden', 'hold him'].every(function (p) { return words(R.rhymes(D, 'told him', 1)).indexOf(p) >= 0; }), true);
+    check('Searching a phrase works: "hold it" → told it, sold it', ['told it', 'sold it'].every(function (p) { return words(R.rhymes(D, 'hold it', 1)).indexOf(p) >= 0; }), true);
     check('Words said one way have no choice to make (stop)', R.pronunciations(D, 'stop'), []);
     check('Names are marked in the word list (george), everyday words aren\'t (something)', [D.real[D.index.george], D.real[D.index.something]], [false, true]);
     check('The word itself is left out', words(loose).indexOf('stop') < 0, true);

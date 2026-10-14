@@ -138,13 +138,14 @@
   function isVowelToken(t) { return VOWELS.indexOf(t) >= 0 || t === 'UH0'; }
 
   /** Turns the word list text (SW.WORDS) into something fast to search. */
-  /** Entry "word CODE[,ALT…]" ("^word" = not a dictionary word, e.g. a name). tails[i] holds the
-      rhyme part of every way to say the word ("live" = lyve / liv); phones[i] is the usual way. */
+  /** Entry "word CODE[,ALT…]" ("^word" = not a dictionary word, e.g. a name; "+word" = a verb). tails[i]
+      holds the rhyme part of every way to say the word ("live" = lyve / liv); phones[i] is the usual way. */
   function load(text) {
-    var words = [], phones = [], alts = [], tails = [], real = [], index = Object.create(null);
+    var words = [], phones = [], alts = [], tails = [], real = [], verb = [], index = Object.create(null);
     text.split('|').forEach(function (entry, i) {
-      var sp = entry.indexOf(' '), w = entry.slice(0, sp), isName = w[0] === '^';
-      if (isName) w = w.slice(1);
+      var sp = entry.indexOf(' '), w = entry.slice(0, sp), isName = w[0] === '^', isVerb = w[0] === '+';
+      if (isName || isVerb) w = w.slice(1);
+      verb.push(isVerb);
       // Other ways to say it count for rhyming only if they're real ones: not a mumbled form with no
       // stressed vowel ("to" as "tih", "does" as "diz"), and not for small grammar words ("says" as "siz").
       var all = entry.slice(sp + 1).split(',').map(decode).filter(function (ph, k) {
@@ -153,7 +154,7 @@
       words.push(w); phones.push(all[0]); alts.push(all); tails.push(all.map(tail)); real.push(!isName);
       index[w] = i;
     });
-    return { words: words, phones: phones, alts: alts, tails: tails, real: real, index: index };
+    return { words: words, phones: phones, alts: alts, tails: tails, real: real, verb: verb, index: index, phrases: null };
   }
 
   /** The closest score between any way of saying one word and any way of saying the other. */
@@ -292,13 +293,54 @@
     return out.length > 1 ? out : [];
   }
 
+  // ---------- Two-word rhymes: a verb + a light word ("told him", "hold it", "show me") ----------
+  var PHRASE_ENDS = ['it', 'me', 'you', 'him', 'her', 'them', 'us'];
+  var PHRASE_VERBS = 6000;   // the most common verbs only
+
+  /** Builds the two-word phrases once (the first time they're needed): [{ text, tails, j (verb's place) }]. */
+  function phrases(dict) {
+    if (dict.phrases) return dict.phrases;
+    var ends = PHRASE_ENDS.map(function (w) {
+      var k = dict.index[w];
+      var ph = dict.phones[k].map(function (p) { return /\d$/.test(p) ? p.slice(0, -1) + '0' : p; });   // said lightly
+      if (ph[0] === 'HH') ph = ph.slice(1);   // "told 'im", "kiss 'er": the h drops when sung
+      return { w: w, k: k, ph: ph };
+    });
+    var out = [];
+    for (var j = 0, n = 0; j < dict.words.length && n < PHRASE_VERBS; j++) {
+      if (!dict.verb[j]) continue;
+      n++;
+      ends.forEach(function (e) {
+        out.push({ text: dict.words[j] + ' ' + e.w, j: j, end: e.k, tails: dict.alts[j].map(function (ph) { return tail(ph.concat(e.ph)); }) });
+      });
+    }
+    // Quick lookup by the rhyme's first vowel, so a search only checks phrases that could match.
+    out.byVowel = {};
+    out.forEach(function (p) {
+      p.tails.forEach(function (tl) { var key = vowelKey(tl); (out.byVowel[key] = out.byVowel[key] || []).indexOf(p) < 0 && out.byVowel[key].push(p); });
+    });
+    return (dict.phrases = out);
+  }
+  /** A tail's first (stressed) vowel, with close vowels counted as one. */
+  function vowelKey(tl) { return nearVowel(tl[0], tl[1]); }
+
+  /** The rhyme parts of a word, or of a phrase like "hold it" (from its last stressed syllable). */
+  function tailsOf(dict, word) {
+    var i = find(dict, word);
+    if (i >= 0) return dict.tails[i];
+    var spans = wordSpans(String(word));
+    if (spans.length < 2) return null;
+    var p = phraseEnd(dict, spans);
+    return p ? [p.tail] : null;
+  }
+
   /** Rhymes for a word, most usable first (see usability; closeness counts a little).
       pron (optional) = rhyme only one way of saying it (an index from pronunciations()).
       Returns null if the word isn't in the list; otherwise [{ word, syllables, type }]. */
   function rhymes(dict, word, strictness, pron) {
-    var i = find(dict, word);
-    if (i < 0) return null;
-    var mine = pron >= 0 && dict.tails[i][pron] ? [dict.tails[i][pron]] : dict.tails[i], found = [];
+    var i = find(dict, word), all = tailsOf(dict, word);
+    if (!all) return null;
+    var mine = i >= 0 && pron >= 0 && dict.tails[i][pron] ? [dict.tails[i][pron]] : all, found = [];
     for (var j = 0; j < dict.words.length; j++) {
       if (j === i) continue;
       var sc = bestScore(mine, dict.tails[j]), t = sc < 0 ? -1 : Math.floor(sc);
@@ -314,8 +356,23 @@
       } else score = 0.65 * usability(dict, j) + 0.35 * CLOSENESS[sc];
       found.push({ word: w, syllables: dict.phones[j].filter(isVowel).length, type: TYPES[t], t: t, score: score });
     }
+    // Two-word rhymes (perfect or family only): "golden" → "told him", "broken" → "woke it".
+    var self = clean(word);
+    var ph = phrases(dict), candidates = [];
+    mine.forEach(function (a) { (ph.byVowel[vowelKey(a)] || []).forEach(function (p) { if (candidates.indexOf(p) < 0) candidates.push(p); }); });
+    candidates.forEach(function (p) {
+      if (p.text === self) return;
+      var sc = -1;
+      mine.forEach(function (a) { p.tails.forEach(function (b) { var s = tailScore(a, b); if (s >= 0 && (sc < 0 || s < sc)) sc = s; }); });
+      // Only perfect and the closest family matches (cousin consonants, close vowels): looser ones are
+      // too far-fetched for a phrase. Sound counts as much as how common the verb is.
+      if (sc < 0 || sc > 1.3 || Math.floor(sc) > strictness) return;
+      var t = Math.floor(sc);
+      found.push({ word: p.text, phrase: true, syllables: dict.phones[p.j].filter(isVowel).length + 1, type: TYPES[t], t: t,
+        score: 0.5 * Math.min(usability(dict, p.j), usability(dict, p.end)) + 0.5 * CLOSENESS[sc] });
+    });
     found.sort(function (x, y) { return y.score - x.score; });
-    return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type }; });
+    return found.map(function (r) { return { word: r.word, syllables: r.syllables, type: r.type, phrase: !!r.phrase }; });
   }
 
   // ---------- Lyric lines: syllables and rhyme letters ----------
@@ -359,6 +416,7 @@
       var i = find(dict, spans[k].key);
       if (i < 0) return null;
       var ph = dict.phones[i].map(function (p) { return LIGHT[spans[k].key] && /\d$/.test(p) ? p.slice(0, -1) + '0' : p; });
+      if (LIGHT[spans[k].key] && k > 0 && ph[0] === 'HH') ph = ph.slice(1);   // "told 'im": a light word's h drops
       phones = ph.concat(phones); owner = ph.map(function () { return k; }).concat(owner);
       if (!LIGHT[spans[k].key] && ph.some(function (p) { return /[12]$/.test(p); })) {
         var st = tailStart(phones);
@@ -668,7 +726,7 @@
     CODE: CODE, SYMBOLS: SYMBOLS, TYPES: TYPES, STRICTNESS: STRICTNESS, FAMILY: FAMILY,
     encode: encode, decode: decode, tail: tail, compareTails: compareTails, tailScore: tailScore,
     load: load, clean: clean, find: find, syllables: syllables, rhymeType: rhymeType, rhymes: rhymes,
-    respell: respell, pronunciations: pronunciations,
+    respell: respell, pronunciations: pronunciations, tailsOf: tailsOf,
     rankSynonyms: rankSynonyms, rankAntonyms: rankAntonyms,
     lineWords: lineWords, wordSpans: wordSpans, lineSyllables: lineSyllables, rhymeScheme: rhymeScheme, lineRhyme: lineRhyme,
     loadThesaurus: loadThesaurus, baseWord: baseWord, loadDefinitions: loadDefinitions, definitions: definitions, meanings: meanings, isVulgar: isVulgar, band: band
