@@ -18,9 +18,9 @@
   var SAVE_AFTER_MS = 800;      // save a section this long after you stop typing
   var RETRY_MS = 5000;          // try a failed save again after this long
   var UNDO_MS = 10000;          // how long "Undo" stays after deleting
-  // Lyrics save to the Setlist app's songs (song_lyric_sections). #practice at the end of the address
-  // uses a stand-in kept in the browser tab instead, for testing without touching real songs.
-  var SAVING_READY = true;
+  // Lyrics save to the Setlist app's songs (song_lyric_sections), only inside the Setlist app (it
+  // passes its database client). Anywhere else (the test site) songs are practice ones kept in the
+  // browser tab and never sent anywhere. #practice forces that inside Setlist too, for testing.
 
   function create(ctx) {
     var state = ctx.state, esc = ctx.esc;
@@ -41,7 +41,7 @@
     // ---------- Connecting ----------
     function connect() {
       if (store || storeProblem === 'connecting') return;
-      if (!SAVING_READY || /practice/.test(root.location.hash)) { store = SW.songs.practiceStore(); return; }
+      if (!ctx.client || /practice/.test(root.location.hash)) { store = SW.songs.practiceStore(); return; }
       storeProblem = 'connecting';
       SW.songs.open(function (s) { store = s; storeProblem = null; ctx.render(); }, function (why) { storeProblem = why; ctx.render(); },
         { client: ctx.client, who: ctx.who });   // inside the Setlist app: its own database connection and member name
@@ -117,7 +117,7 @@
         }).join('');
       }
       var practice = store && store.kind === 'practice'
-        ? '<div class="sw-notsaved"><b>Not saved yet.</b> Songs stay while this tab is open (even through updates), but close the tab and they’re gone. Use ⋯ → <b>Copy lyrics</b> in a song to keep a copy. Saving comes with the Setlist merge.</div>' : '';
+        ? '<div class="sw-notsaved"><b>Not saved yet.</b> Songs stay while this tab is open (even through updates), but close the tab and they’re gone. Use ⋯ → <b>Copy lyrics</b> in a song to keep a copy. This test site never saves or sends your songs anywhere.</div>' : '';
       return `${ctx.findBox()}
         <div class="sw-label">Songs ${store && !storeProblem && store.canCreate !== false ? '<button data-act="ed-new">+ New song</button>' : ''}</div>
         ${store && store.canCreate === false ? '<div class="sw-footnote" style="margin:-4px 0 10px">Your Setlist songs. New songs are added in the Setlist app.</div>' : ''}
