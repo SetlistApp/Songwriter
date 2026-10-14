@@ -244,7 +244,8 @@
       if (!song) return `${storeProblem ? problemBox() : '<div class="sw-wempty">Opening…</div>'}`;
       var o = order(), lab = labels(o, secs);
       return `<div class="sw-songbar">${ctx.singleSong ? '' : '<button class="sw-back" data-act="ed-back" aria-label="Back to songs">‹</button>'}
-          ${store.canRename === false ? `<div class="sw-title sw-keepcase">${esc(song.title || 'Untitled')}</div>`
+          ${ctx.singleSong ? '<span class="sw-grow"></span>'   /* inside a Setlist song page, which already shows the title */
+            : store.canRename === false ? `<div class="sw-title sw-keepcase">${esc(song.title || 'Untitled')}</div>`
             : `<input class="sw-title sw-keepcase" data-title value="${esc(song.title || '')}" placeholder="Song title" autocomplete="off">`}
           ${status()}<button class="sw-dots" data-act="ed-songmenu" aria-label="Song menu">⋯</button></div>
         <div class="sw-countbar"><button class="sw-switch ${showCounts ? 'sw-on' : ''}" data-act="ed-counts"><span></span>Syllables &amp; rhymes</button></div>

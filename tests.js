@@ -258,7 +258,12 @@
     check('Lines: lot / stop share a letter as a near (family) rhyme → ABAB', [vs.scheme, vs.lines[2].near, vs.lines[3].near], ['ABAB', true, false]);
     check('Lines: a letter needs two lines (AA·, not AAB)', R.rhymeScheme(D, ['I saw the light', 'it felt so right', 'and then the rain']).scheme, 'AA·');
     check('Lines: blank lines are skipped in the scheme', R.rhymeScheme(D, ['the night', '', 'so bright']).scheme, 'AA');
-    check('Lines: same last word counts as a rhyme', R.rhymeScheme(D, ['I love you', 'I need you']).scheme, 'AA');
+    check('Lines: the same last word is not a rhyme (night / night)', R.rhymeScheme(D, ['out in the night', 'dancing all night']).scheme, '');
+    check('Lines: a repeated line gets no letter', R.rhymeScheme(D, ['choosin Texas', 'choosin Texas']).scheme, '');
+    check('Lines: same last word, different words before it: still no rhyme (love you / need you)', R.rhymeScheme(D, ['I love you', 'I need you']).scheme, '');
+    check('Lines: different words before a shared small word still rhyme (hold it / told it)', R.rhymeScheme(D, ['I had to hold it', 'nobody told it']).scheme, 'AA');
+    check('Lines: a same-word line still rhymes with a different word (night / night / light)', R.rhymeScheme(D, ['out in the night', 'dancing all night', 'under the light']).scheme, 'AAA');
+    check('Lines: you can still give two same-word lines a letter yourself', R.rhymeScheme(D, ['out in the night', 'dancing all night'], { night: 'A' }).scheme, 'AA');
     check('"ih"/"ee" only blur before m, n, ng: live / leave, live / please, his / he\'s don\'t rhyme', [R.rhymeType(D, 'live', 'leave'), R.rhymeType(D, 'live', 'please'), R.rhymeType(D, 'his', "he's")], [null, null, null]);
     check('…but him / team (before m) and fear / here (before r) still do', [R.rhymeType(D, 'him', 'team'), R.rhymeType(D, 'fear', 'here')], ['family', 'perfect']);
     check('Close vowels: thing / mean, sing / seen, good / food are near (family) rhymes', [R.rhymeType(D, 'thing', 'mean'), R.rhymeType(D, 'sing', 'seen'), R.rhymeType(D, 'good', 'food')], ['family', 'family', 'family']);
@@ -270,8 +275,9 @@
     var ks = R.rhymeScheme(D, ['my heart', 'a star', 'one thing', 'so mean']);
     check('Lines: vowel rhymes get a letter too (heart / star dotted, thing / mean dashed)', [ks.scheme, ks.lines[1].kind, ks.lines[3].kind], ['AABB', 'vowel', 'family']);
     var chorusL = ['its those things that you tell me', 'without saying a thing', 'just that look that you give me', 'and I know what you mean'];
-    check('Lines: each line pairs with its best rhyme (me/me + thing/mean = ABAB, not AAAA)', R.rhymeScheme(D, chorusL).scheme, 'ABAB');
-    check('Lines: letters you pick are kept (mean = C, thing = C)', R.rhymeScheme(D, chorusL, { mean: 'C', thing: 'C' }).scheme, 'ACAC');
+    check('Lines: me / me is the same word, so each "me" line joins its near rhyme (me / mean) → AAAA', R.rhymeScheme(D, chorusL).scheme, 'AAAA');
+    check('Lines: letters you pick are kept (mean = C, thing = C)', R.rhymeScheme(D, chorusL, { mean: 'C', thing: 'C' }).scheme, 'CCCC');
+    check('Lines: each line pairs with its best rhyme (light goes with night, not with a looser match)', R.rhymeScheme(D, ['the night', 'one thing', 'so bright', 'so mean']).scheme, 'ABAB');
     check('Lines: picking the same letter rhymes any two endings', R.rhymeScheme(D, ['say skrrt', 'we fly'], { skrrt: 'A', fly: 'A' }).lines.map(function (l) { return l.kind; }), ['picked', 'picked']);
     check('Lines: "-" means no letter, even if the dictionary found a rhyme', R.rhymeScheme(D, ['one thing', 'so mean'], { mean: '-' }).scheme, '');
     check('Lines: automatic letters skip ones you picked (B picked → auto group is A, then C)', R.rhymeScheme(D, ['the night', 'so bright', 'my fear', 'is here', 'what you mean'], { mean: 'B' }).scheme, 'AACCB');
@@ -279,7 +285,7 @@
     check('Multi-syllable: broken / hopin\' rhyme (near)', R.rhymeScheme(D, ['I keep it broken', 'still I keep on hopin’']).lines.map(function (l) { return l.letter + l.kind; }), ['Afamily', 'Afamily']);
     check('Multi-syllable: "hold it" / "golden" underline both words of "hold it"', ul(['you told me hold it', 'the days were golden']), ['hold it:A', 'golden:A']);
     check('Multi-syllable: tell me / sell me underline the whole ending', ul(['you tell me', 'you sell me']), ['tell me:A', 'sell me:A']);
-    check('Multi-syllable: tell me / give me still rhyme on "me" (one word)', ul(['you tell me', 'you give me']), ['me:A', 'me:A']);
+    check('Multi-syllable: tell me / give me don\'t rhyme (same last word, tell / give don\'t rhyme)', ul(['you tell me', 'you give me']), ['', '']);
     check('Inner rhymes: words you letter mid-line get underlined', ul(['the fire in my eyes', 'a liar in disguise'], { fire: 'C', liar: 'C' }), ['fire:C+eyes:A', 'liar:C+disguise:A']);
     check('Lines: hyphenated words count both parts (well-known = 2)', R.lineSyllables(D, 'well-known'), 2);
     check('Lines: punctuation and curly quotes are ignored', R.lineWords('“Stop!” she said—no, don’t.'), ['Stop', 'she', 'said', 'no', 'don’t']);

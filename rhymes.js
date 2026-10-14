@@ -454,10 +454,13 @@
     };
     var pickOf = function (i) { var p = info[i].end && picked[info[i].end]; return p && (p === '-' || LETTERS.indexOf(p) >= 0) ? p : null; };
     /** How lines i and j rhyme: { kind, phrase } (phrase = it's the multi-syllable endings that match). */
+    // The same word at the end of two lines isn't a rhyme ("night" / "night"); only different words
+    // count. A shared small word after different ones still can: "hold it" / "told it".
+    var endWords = function (x) { return x.spans.slice(x.phrase.from).map(function (s) { return s.key; }).join(' '); };
     var match = function (i, j) {
-      var a = info[i], b = info[j];
-      var ws = wordScore(dict, a.end, b.end), best = ws >= 0 ? { score: ws, kind: TYPES[Math.floor(ws)], phrase: false } : null;
-      if (a.phrase && b.phrase && (a.phrase.multi || b.phrase.multi)) {
+      var a = info[i], b = info[j], same = a.end === b.end;
+      var ws = same ? -1 : wordScore(dict, a.end, b.end), best = ws >= 0 ? { score: ws, kind: TYPES[Math.floor(ws)], phrase: false } : null;
+      if (a.phrase && b.phrase && (a.phrase.multi || b.phrase.multi) && !(same && endWords(a) === endWords(b))) {
         var ps = tailScore(a.phrase.tail, b.phrase.tail);
         if (ps >= 0 && (!best || ps <= best.score)) best = { score: ps, kind: TYPES[Math.floor(ps)], phrase: true };
       }
