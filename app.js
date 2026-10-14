@@ -2,8 +2,15 @@
    handles taps and drag-and-drop. Music rules come from SW.theory, rhymes from SW.rhymes,
    drawings from SW.instruments.
 
-   Use: SW.app.mount(someElement). Everything is drawn inside that element, so it can be
-   dropped into the Setlist app later. */
+   Use: const sw = SW.app.mount(someElement, options). Everything is drawn inside that element.
+   sw.destroy() removes it again (and every page-wide listener it added).
+   Options (all optional), for use inside the Setlist app:
+     embedded: true      no Songwriter title bar / version, no reload snapshot
+     area: 'chords' | 'lyrics'          which big tab to start on
+     songId: 'id…'       open straight to that Setlist song's lyrics (no songs list, no back button)
+     client              the Setlist app's Supabase client (instead of loading our own)
+     who: () => 'Dan'    the member name saved as "updated by"
+     assetBase: '/Songwriter/'   where the word-list files are (they load when first needed) */
 (function (root) {
   const SW = root.SW = root.SW || {};
   const T = SW.theory;
@@ -12,7 +19,7 @@
 
   const LAND_QUERY = '(orientation: landscape) and (max-height: 520px)';   // phone turned sideways
   const DESK_QUERY = '(min-width: 900px)';
-  const APP_VERSION = '1.0-beta32';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
+  const APP_VERSION = '1.0-beta33';   // shown next to the title, like the Setlist app; keep in step with CHANGELOG.md
   const SNAPSHOT_KEY = 'songwriter_reloadSnapshot';   // keeps your work through an automatic update
   const DRAG_START_PX = 6;   // a finger has to move this far before a tap becomes a drag
   const WORDS_URL = 'words.js';   // the rhyme word list (~0.5 MB), loaded the first time Lyrics opens
@@ -27,9 +34,13 @@
   // First batch shown in each word-sheet tab; the rest is one tap away ("Show N more").
   // Rhymes count per kind (perfect, family, vowel), so lots of perfect rhymes can't hide the family ones.
   const FIRST = { rhymes: 30, phrases: 12, syn: 40, ant: 40, def: 4 };
-  const FIRST_MEANINGS = 4;   // meaning groups shown before "Show more meanings"   // extra online words: common ones; rare ones are all listed after them
 
-  function mount(el) {
+  function mount(el, options) {
+    const opts = options || {};
+    const BASE = opts.assetBase || '';   // where words.js etc. live ("/Songwriter/" inside the Setlist app)
+    // Page-wide listeners go through on(), so destroy() can take them all off again.
+    const offs = [];
+    const on = (target, type, fn, o) => { target.addEventListener(type, fn, o); offs.push(() => target.removeEventListener(type, fn, o)); };
     const state = {
       tonic: T.parseNote('C'),
       scaleId: 'major',
@@ -66,7 +77,9 @@
       vlLabels: 'notes',     // roll labels: 'notes' (C, E, G) or 'tones' (1, 3, 5, 7)
       vlSig: ''              // what the voicings were worked out for (key, chords, settings)
     };
-    restoreSnapshot(state);
+    if (!opts.embedded) restoreSnapshot(state);
+    if (opts.area) state.area = opts.area;
+    if (opts.songId) Object.assign(state, { area: 'lyrics', lyView: 'song', lySong: opts.songId, lyEditing: null });
     const landMq = root.matchMedia(LAND_QUERY);
     const deskMq = root.matchMedia(DESK_QUERY);
     let drag = null;
@@ -359,13 +372,17 @@
 
     /** Big tabs (Chords | Lyrics); on Chords, the smaller Progression | Voice leading switch below. */
     function pageTabs() {
+      if (opts.songId) return '';   // one song's lyrics inside Setlist: no big tabs
       const area = `<div class="sw-tabs sw-areatabs">${[['chords', 'Chords'], ['lyrics', 'Lyrics']].map(([v, label]) =>
         `<button class="sw-tab ${state.area === v ? 'sw-on' : ''}" data-act="area" data-arg="${v}">${label}</button>`).join('')}</div>`;
       if (state.area !== 'chords') return area;
       return area + seg('page', [['progression', 'Progression'], ['voicing', 'Voice leading']], state.page, 'sw-wide');
     }
 
-    const header = () => `<header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${state.area === 'chords' ? picker() : ''}</header>`;
+    const header = () => {
+      if (opts.embedded) return state.area === 'chords' ? `<header class="sw-hdr sw-embedded"><span></span>${picker()}</header>` : '';
+      return `<header class="sw-hdr"><div class="sw-brand"><div class="sw-logo">Song<b>writer</b></div><span class="sw-ver">v${APP_VERSION}</span></div>${state.area === 'chords' ? picker() : ''}</header>`;
+    };
     const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     // ---------- Lyrics page ----------
@@ -382,20 +399,20 @@
       if (dictState !== 'idle') return;
       if (SW.WORDS) { dict = R.load(SW.WORDS); dictState = 'ready'; return; }
       dictState = 'loading';
-      loadScript(WORDS_URL, () => { dict = R.load(SW.WORDS); dictState = 'ready'; render(); }, () => { dictState = 'idle'; render(); });
+      loadScript(BASE + WORDS_URL, () => { dict = R.load(SW.WORDS); dictState = 'ready'; render(); }, () => { dictState = 'idle'; render(); });
     }
     function needThesaurus() {
       if (thState !== 'idle') return;
       if (SW.THESAURUS) { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; return; }
       thState = 'loading';
-      loadScript(THESAURUS_URL, () => { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; render(); }, () => { thState = 'idle'; render(); });
+      loadScript(BASE + THESAURUS_URL, () => { th = R.loadThesaurus(SW.THESAURUS); thState = 'ready'; render(); }, () => { thState = 'idle'; render(); });
     }
 
     function needDefinitions() {
       if (defState !== 'idle') return;
       if (SW.DEFINITIONS) { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; return; }
       defState = 'loading';
-      loadScript(DEFINITIONS_URL, () => { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; render(); }, () => { defState = 'idle'; render(); });
+      loadScript(BASE + DEFINITIONS_URL, () => { defs = R.loadDefinitions(SW.DEFINITIONS); defState = 'ready'; render(); }, () => { defState = 'idle'; render(); });
     }
 
     /** The Find rhymes box (top of the songs list). */
@@ -806,7 +823,7 @@
     });
 
     // Stop the page from scrolling while a chord is being dragged.
-    document.addEventListener('touchmove', (e) => {
+    on(document, 'touchmove', (e) => {
       if ((drag && drag.active) || sheetDrag) e.preventDefault();
     }, { passive: false });
     el.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-drag]')) e.preventDefault(); });
@@ -968,7 +985,7 @@
       sheetDrag = { y0: e.clientY, t0: Date.now(), dy: 0, sheetEl, dimEl: el.querySelector('.sw-dimmer') };
       sheetEl.style.transition = 'none';
     });
-    document.addEventListener('pointermove', (e) => {
+    on(document, 'pointermove', (e) => {
       if (!sheetDrag) return;
       sheetDrag.dy = Math.max(0, e.clientY - sheetDrag.y0);   // only follows the finger downward
       sheetDrag.sheetEl.style.transform = `translateY(${sheetDrag.dy}px)`;
@@ -991,12 +1008,13 @@
         dimEl.style.opacity = '';
       }
     }
-    document.addEventListener('pointerup', endSheetDrag);
-    document.addEventListener('pointercancel', endSheetDrag);
+    on(document, 'pointerup', endSheetDrag);
+    on(document, 'pointercancel', endSheetDrag);
 
     // ---------- Lyrics: songs list and editor (editor.js) ----------
     const editor = SW.editor.create({
-      el, state, render, esc, findBox,
+      el, state, render, esc, findBox, on,
+      client: opts.client, who: opts.who, singleSong: !!opts.songId,
       dict: () => { needWords(); return dictState === 'ready' ? dict : null; },
       openWord: (word, tab) => {
         lookup(word, false);
@@ -1007,9 +1025,9 @@
 
     // ---------- Start ----------
     let resizeTimer;
-    root.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 120); });
-    landMq.addEventListener('change', render);
-    deskMq.addEventListener('change', render);
+    on(root, 'resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 120); });
+    on(landMq, 'change', render);
+    on(deskMq, 'change', render);
     render();
     return {
       state,
@@ -1019,7 +1037,16 @@
         try { root.sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state)); } catch (e) { /* private mode: fine */ }
       },
       /** True while a chord is being dragged (don't refresh mid-drag). */
-      isBusy: () => !!(drag && drag.active) || editor.isBusy()
+      isBusy: () => !!(drag && drag.active) || editor.isBusy(),
+      /** Take the Songwriter off the page: saves anything pending, removes its listeners and drawing. */
+      destroy() {
+        endDrag();
+        editor.destroy();
+        offs.splice(0).forEach((off) => off());
+        clearTimeout(resizeTimer);
+        lockPageScroll(false);
+        el.innerHTML = '';
+      }
     };
   }
 

@@ -1,101 +1,91 @@
-/* Songwriter: saving lyric drafts (songs and their sections) in the Setlist app's Supabase database.
-   Only the screen code calls this; it never touches the Setlist app's own tables.
+/* Songwriter: lyrics for the Setlist app's songs, saved in its Supabase database.
 
-   Tables (made by supabase-setup.sql, a private file):
-     songwriter_songs     id, title, section_order (section ids, top to bottom), updated_at, deleted_at
-     songwriter_sections  id, song_id, tag, repeat_of, body, updated_at, deleted_at
-   Each section saves on its own, so two people editing different sections never clash; on the
-   same section the last save wins (like the Setlist app). "Deleting" only sets deleted_at, so
-   nothing is lost by accident.
+   Songs are the Setlist app's own songs (read only here: they're created, renamed and deleted in
+   Setlist). Each song's lyrics are rows in song_lyric_sections (made by supabase-lyrics.sql, a private
+   file): one row per section, in order by `position`. Each section saves on its own, so two people
+   editing different sections never clash; on the same section the last save wins (like Setlist's
+   fields). "Deleting" a section only sets deleted_at (Undo); deleting a song in Setlist deletes its
+   sections.
 
-   SW.songs.open(onReady) loads the Supabase library (online only) and calls onReady(store).
-   SW.songs.practiceStore() is a stand-in that keeps everything in memory, for testing. Both have
-   the same methods, all returning promises. */
+   SW.songs.open(onReady, onFail, options) loads the Supabase library (online only), or uses the
+   Setlist app's own client (options.client), and calls onReady(store).
+   SW.songs.practiceStore() is a stand-in kept in the browser tab, for testing (#practice).
+   Both have the same methods, all returning promises. */
 (function (root) {
   var SW = root.SW = root.SW || {};
   var LIB_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
-  var SONGS = 'songwriter_songs', SECTIONS = 'songwriter_sections';
+  var SONGS = 'songs', SECTIONS = 'song_lyric_sections';
 
   var now = function () { return new Date().toISOString(); };
   var check = function (res) { if (res.error) throw new Error(res.error.message); return res.data; };
+  /** Section ids in order (by position). */
+  var orderOf = function (secs) { return secs.slice().sort(function (a, b) { return a.position - b.position; }).map(function (s) { return s.id; }); };
 
-  /** A store backed by Supabase. */
-  function supabaseStore(client) {
-    function touch(songId) {
-      return client.from(SONGS).update({ updated_at: now() }).eq('id', songId).then(check);
-    }
+  /** A store for Setlist songs. who() = the name to save as "updated by" (a Setlist member view). */
+  function setlistStore(client, who) {
+    var by = function () { return (who && who()) || 'Songwriter'; };
+    var setOrder = function (songId, order) {
+      return Promise.all(order.map(function (id, i) { return client.from(SECTIONS).update({ position: i }).eq('id', id).then(check); }));
+    };
     return {
-      kind: 'online',
+      kind: 'setlist',
+      positional: true,     // the order comes from each section's position
+      canCreate: false, canRename: false, canDeleteSong: false,   // songs belong to Setlist
 
-      /** Every song, newest first, with its sections (for the list's preview). */
+      /** Every Setlist song: ones with lyrics first (most recently edited first), then the rest A–Z. */
       list: function () {
-        return client.from(SONGS).select('id,title,section_order,updated_at').is('deleted_at', null).order('updated_at', { ascending: false })
-          .then(check).then(function (songs) {
-            if (!songs.length) return [];
-            return client.from(SECTIONS).select('id,song_id,tag,repeat_of,body').is('deleted_at', null).in('song_id', songs.map(function (s) { return s.id; }))
-              .then(check).then(function (secs) {
-                return songs.map(function (s) { return Object.assign({}, s, { sections: secs.filter(function (x) { return x.song_id === s.id; }) }); });
-              });
+        return Promise.all([
+          client.from(SONGS).select('id,title').then(check),
+          client.from(SECTIONS).select('id,song_id,tag,repeat_of,body,position,updated_at').is('deleted_at', null).then(check)
+        ]).then(function (r) {
+          var songs = r[0], secs = r[1];
+          var out = songs.map(function (s) {
+            var mine = secs.filter(function (x) { return x.song_id === s.id; });
+            var latest = mine.reduce(function (m, x) { return x.updated_at > m ? x.updated_at : m; }, '');
+            return { id: s.id, title: s.title, sections: mine, section_order: orderOf(mine), updated_at: latest || null };
           });
-      },
-
-      /** A new song with one empty Verse. */
-      create: function (title) {
-        return client.from(SONGS).insert({ title: title || 'Untitled' }).select().single().then(check).then(function (song) {
-          return client.from(SECTIONS).insert({ song_id: song.id, tag: 'Verse' }).select().single().then(check).then(function (sec) {
-            return client.from(SONGS).update({ section_order: [sec.id] }).eq('id', song.id).select().single().then(check).then(function (s) {
-              return { song: s, sections: [sec] };
-            });
+          return out.sort(function (a, b) {
+            if (!!a.updated_at !== !!b.updated_at) return a.updated_at ? -1 : 1;
+            if (a.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
+            return String(a.title || '').localeCompare(String(b.title || ''));
           });
         });
       },
 
       load: function (songId) {
         return Promise.all([
-          client.from(SONGS).select('*').eq('id', songId).single().then(check),
+          client.from(SONGS).select('id,title').eq('id', songId).single().then(check),
           client.from(SECTIONS).select('*').eq('song_id', songId).is('deleted_at', null).then(check)
-        ]).then(function (r) { return { song: r[0], sections: r[1] }; });
+        ]).then(function (r) { return { song: Object.assign({}, r[0], { section_order: orderOf(r[1]) }), sections: r[1] }; });
       },
 
-      saveTitle: function (songId, title) {
-        return client.from(SONGS).update({ title: title, updated_at: now() }).eq('id', songId).select().single().then(check);
-      },
-
-      /** Save one section's changes ({ tag, body, repeat_of }). */
+      /** Save one section's changes ({ tag, body, repeat_of, rhyme_letters }). */
       saveSection: function (id, songId, patch) {
-        return client.from(SECTIONS).update(Object.assign({}, patch, { updated_at: now() })).eq('id', id).select().single().then(check)
-          .then(function (row) { return touch(songId).then(function () { return row; }); });
+        return client.from(SECTIONS).update(Object.assign({}, patch, { updated_at: now(), updated_by: by() })).eq('id', id).select().single().then(check);
       },
 
-      /** Add a section and put the song's sections in the given order (which includes "NEW" where it goes). */
+      /** Add a section where "NEW" sits in the given order, then save everyone's positions. */
       addSection: function (songId, fields, order) {
-        return client.from(SECTIONS).insert(Object.assign({ song_id: songId }, fields)).select().single().then(check).then(function (sec) {
-          var o = order.map(function (x) { return x === 'NEW' ? sec.id : x; });
-          return client.from(SONGS).update({ section_order: o, updated_at: now() }).eq('id', songId).then(check).then(function () { return { section: sec, order: o }; });
-        });
+        return client.from(SECTIONS).insert(Object.assign({ song_id: songId, position: order.indexOf('NEW'), updated_by: by() }, fields)).select().single().then(check)
+          .then(function (sec) {
+            var o = order.map(function (x) { return x === 'NEW' ? sec.id : x; });
+            return setOrder(songId, o).then(function () { return { section: sec, order: o }; });
+          });
       },
 
-      setOrder: function (songId, order) {
-        return client.from(SONGS).update({ section_order: order, updated_at: now() }).eq('id', songId).then(check);
-      },
+      setOrder: setOrder,
 
-      /** Hide a section (or bring it back with deleted = false). */
+      /** Hide a section (or bring it back with deleted = false), then save the new order. */
       setSectionDeleted: function (id, songId, deleted, order) {
-        return client.from(SECTIONS).update({ deleted_at: deleted ? now() : null }).eq('id', id).then(check)
-          .then(function () { return client.from(SONGS).update({ section_order: order, updated_at: now() }).eq('id', songId).then(check); });
+        return client.from(SECTIONS).update({ deleted_at: deleted ? now() : null, updated_by: by() }).eq('id', id).then(check)
+          .then(function () { return setOrder(songId, order); });
       },
 
-      setSongDeleted: function (songId, deleted) {
-        return client.from(SONGS).update({ deleted_at: deleted ? now() : null }).eq('id', songId).then(check);
-      },
-
-      /** Live updates for one song: calls onChange({ table, row }) when anyone saves. Returns stop(). */
+      /** Live updates for one song: calls onChange({ table: 'sections', row }) when anyone saves. Returns stop(). */
       subscribe: function (songId, onChange) {
-        var ch = client.channel('songwriter-' + songId)
+        var ch = client.channel('songwriter-lyrics-' + songId)
           .on('postgres_changes', { event: '*', schema: 'public', table: SECTIONS, filter: 'song_id=eq.' + songId },
-            function (p) { onChange({ table: 'sections', row: p.new }); })
-          .on('postgres_changes', { event: '*', schema: 'public', table: SONGS, filter: 'id=eq.' + songId },
-            function (p) { onChange({ table: 'songs', row: p.new }); })
+            function (p) { onChange({ table: 'sections', row: p.new && p.new.id ? p.new : Object.assign({}, p.old, { deleted_at: now() }) }); })
           .subscribe();
         return function () { client.removeChannel(ch); };
       }
@@ -153,13 +143,16 @@
 
   /** Loads the Supabase library once (it's online-only) and calls onReady(store) or onFail(reason). */
   var opened = null;
-  function open(onReady, onFail) {
+  function open(onReady, onFail, options) {
+    options = options || {};
     if (opened) return onReady(opened);
+    // Inside the Setlist app: use its client (one connection, its settings).
+    if (options.client) { opened = setlistStore(options.client, options.who); return onReady(opened); }
     var cfg = root.SW_CONFIG;
     if (!cfg || !cfg.supabaseUrl || !cfg.supabaseKey) return onFail('not-configured');
     var ready = function () {
       try {
-        opened = supabaseStore(root.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey));
+        opened = setlistStore(root.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey), options.who);
         onReady(opened);
       } catch (e) { onFail('library'); }
     };

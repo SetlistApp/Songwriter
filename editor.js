@@ -18,9 +18,9 @@
   var SAVE_AFTER_MS = 800;      // save a section this long after you stop typing
   var RETRY_MS = 5000;          // try a failed save again after this long
   var UNDO_MS = 10000;          // how long "Undo" stays after deleting
-  // Saving waits for the Setlist merge (lyrics will belong to Setlist songs). Until then songs use the
-  // practice store: kept in this browser tab only (they survive reloads and updates, not closing the tab).
-  var SAVING_READY = false;
+  // Lyrics save to the Setlist app's songs (song_lyric_sections). #practice at the end of the address
+  // uses a stand-in kept in the browser tab instead, for testing without touching real songs.
+  var SAVING_READY = true;
 
   function create(ctx) {
     var state = ctx.state, esc = ctx.esc;
@@ -30,6 +30,7 @@
     var pending = {}, saveTimer = null, saving = false, saveError = false, titleTimer = null;
     var undo = null;                            // { text, run, timer }
     var loadingId = null;                       // song being fetched (so it's only asked for once)
+    var notFound = false;                       // single-song mode (inside Setlist): that song isn't there
     // Syllable counts & rhyme letters on/off: a small per-phone convenience, so phone storage is fine.
     var COUNTS_KEY = 'songwriter_showCounts';
     var showCounts = true;
@@ -42,7 +43,8 @@
       if (store || storeProblem === 'connecting') return;
       if (!SAVING_READY || /practice/.test(root.location.hash)) { store = SW.songs.practiceStore(); return; }
       storeProblem = 'connecting';
-      SW.songs.open(function (s) { store = s; storeProblem = null; ctx.render(); }, function (why) { storeProblem = why; ctx.render(); });
+      SW.songs.open(function (s) { store = s; storeProblem = null; ctx.render(); }, function (why) { storeProblem = why; ctx.render(); },
+        { client: ctx.client, who: ctx.who });   // inside the Setlist app: its own database connection and member name
     }
     function problemOf(err) {
       var m = String(err && err.message || err);
@@ -85,7 +87,7 @@
         connecting: 'Connecting…',
         offline: '<b>You’re offline.</b> For now, songs are saved online, so you need internet to open or edit them. Find rhymes still works.',
         'not-configured': '<b>Saving isn’t set up</b> (no database settings in config.js).',
-        'not-set-up': '<b>The database isn’t set up yet.</b> Run supabase-setup.sql in the Supabase dashboard (see update-plans.md).',
+        'not-set-up': '<b>The lyrics table isn’t set up yet.</b> Run supabase-lyrics.sql in the Supabase dashboard.',
         library: '<b>Couldn’t start the database connection.</b> Try reloading.',
         error: '<b>Couldn’t reach the database.</b> <button class="sw-link" data-act="ed-retry">Try again</button>'
       }[storeProblem];
@@ -109,15 +111,16 @@
           var tags = order.map(function (id) { return byId[id].repeat_of ? null : lab[id]; }).filter(Boolean);
           return `<button class="sw-song" data-act="ed-open" data-id="${esc(s.id)}">
             <b class="sw-keepcase">${esc(s.title || 'Untitled')}</b>
-            <span class="sw-songline">${first ? esc(first) : '<i>No words yet</i>'}</span>
-            <span class="sw-songmeta">${esc(ago(s.updated_at))}${tags.length ? ' · ' + esc(tags.join(', ')) : ''}</span>
+            <span class="sw-songline">${first ? esc(first) : '<i>No lyrics yet</i>'}</span>
+            ${s.updated_at ? `<span class="sw-songmeta">${esc(ago(s.updated_at))}${tags.length ? ' · ' + esc(tags.join(', ')) : ''}</span>` : ''}
           </button>`;
         }).join('');
       }
       var practice = store && store.kind === 'practice'
         ? '<div class="sw-notsaved"><b>Not saved yet.</b> Songs stay while this tab is open (even through updates), but close the tab and they’re gone. Use ⋯ → <b>Copy lyrics</b> in a song to keep a copy. Saving comes with the Setlist merge.</div>' : '';
       return `${ctx.findBox()}
-        <div class="sw-label">Songs ${store && !storeProblem ? '<button data-act="ed-new">+ New song</button>' : ''}</div>
+        <div class="sw-label">Songs ${store && !storeProblem && store.canCreate !== false ? '<button data-act="ed-new">+ New song</button>' : ''}</div>
+        ${store && store.canCreate === false ? '<div class="sw-footnote" style="margin:-4px 0 10px">Your Setlist songs. New songs are added in the Setlist app.</div>' : ''}
         ${practice}${body}${undoBar()}`;
     }
 
@@ -129,11 +132,11 @@
       if (!store) return;
       loadingId = id;
       store.load(id).then(function (r) {
-        if (!r.song || r.song.deleted_at) { state.lyView = 'list'; return; }
+        if (!r.song || r.song.deleted_at) { if (ctx.singleSong) notFound = true; else state.lyView = 'list'; return; }
         song = r.song; secs = {};
         r.sections.forEach(function (x) { secs[x.id] = x; });
         stopLive = store.subscribe(id, onLive);
-      }).catch(function (e) { storeProblem = problemOf(e); state.lyView = 'list'; })
+      }).catch(function (e) { storeProblem = problemOf(e); if (!ctx.singleSong) state.lyView = 'list'; })
         .then(function () { loadingId = null; ctx.render(); });
     }
 
@@ -161,7 +164,16 @@
     }
 
     // ---------- Song page ----------
-    function order() { return (song.section_order || []).filter(function (id) { return secs[id]; }); }
+    /** Section ids top to bottom: by position for Setlist songs, else the song's own list. */
+    function order() {
+      if (store && store.positional) return Object.keys(secs).sort(function (a, b) { return (secs[a].position || 0) - (secs[b].position || 0); });
+      return (song.section_order || []).filter(function (id) { return secs[id]; });
+    }
+    /** Use a new top-to-bottom order (keeps positions in step for Setlist songs). */
+    function applyOrder(o) {
+      song.section_order = o;
+      o.forEach(function (id, i) { if (secs[id]) secs[id].position = i; });
+    }
 
     function status() {
       if (saveError) return '<span class="sw-saved sw-bad">Not saved · retrying</span>';
@@ -227,11 +239,13 @@
 
     function songPage() {
       connect();
+      if (notFound) return '<div class="sw-wempty">Couldn’t find this song’s lyrics.</div>';
       if (store && !song && state.lySong && loadingId !== state.lySong) openSong(state.lySong);
       if (!song) return `${storeProblem ? problemBox() : '<div class="sw-wempty">Opening…</div>'}`;
       var o = order(), lab = labels(o, secs);
-      return `<div class="sw-songbar"><button class="sw-back" data-act="ed-back" aria-label="Back to songs">‹</button>
-          <input class="sw-title sw-keepcase" data-title value="${esc(song.title || '')}" placeholder="Song title" autocomplete="off">
+      return `<div class="sw-songbar">${ctx.singleSong ? '' : '<button class="sw-back" data-act="ed-back" aria-label="Back to songs">‹</button>'}
+          ${store.canRename === false ? `<div class="sw-title sw-keepcase">${esc(song.title || 'Untitled')}</div>`
+            : `<input class="sw-title sw-keepcase" data-title value="${esc(song.title || '')}" placeholder="Song title" autocomplete="off">`}
           ${status()}<button class="sw-dots" data-act="ed-songmenu" aria-label="Song menu">⋯</button></div>
         <div class="sw-countbar"><button class="sw-switch ${showCounts ? 'sw-on' : ''}" data-act="ed-counts"><span></span>Syllables &amp; rhymes</button></div>
         <div class="sw-secs ${showCounts ? '' : 'sw-nocounts'}">${o.map(function (id) { return sectionCard(id, lab); }).join('')}</div>
@@ -253,7 +267,7 @@
       else if (state.sheet === 'ed-link') body = letterMenu();
       else if (state.sheet === 'ed-songmenu') body = `<div class="sw-sheet-title">${esc(song ? song.title || 'Untitled' : '')}<button data-act="close-sheet">Done</button></div>
         <button class="sw-mitem" data-act="ed-copy">Copy lyrics <span>to paste anywhere</span></button>
-        <button class="sw-mitem sw-red" data-act="ed-delsong">Delete song <span>Undo for 10 s</span></button>`;
+        ${store && store.canDeleteSong === false ? '' : '<button class="sw-mitem sw-red" data-act="ed-delsong">Delete song <span>Undo for 10 s</span></button>'}`;
       if (!body) return '';
       return `<div class="sw-dimmer" data-act="close-sheet"></div>
         <div class="sw-sheet"><div class="sw-sheet-head" data-sheet-grab><div class="sw-grab"></div></div>${body}</div>`;
@@ -339,7 +353,7 @@
         })
         .then(function () { saving = false; showStatus(); if (!saveError && Object.keys(pending).length) flush(); });
     }
-    root.addEventListener('online', function () { if (saveError) flush(); });
+    ctx.on(root, 'online', function () { if (saveError) flush(); });
 
     function saveTitle(title) {
       clearTimeout(titleTimer);
@@ -451,8 +465,8 @@
     }
     if (root.visualViewport) {
       var onVV = function () { var bar = ctx.el.querySelector('[data-wordbar]'); if (bar && !bar.hidden) placeBar(bar); };
-      root.visualViewport.addEventListener('resize', onVV);
-      root.visualViewport.addEventListener('scroll', onVV);
+      ctx.on(root.visualViewport, 'resize', onVV);
+      ctx.on(root.visualViewport, 'scroll', onVV);
     }
 
     ctx.el.addEventListener('input', function (e) {
@@ -470,7 +484,7 @@
     ['keyup', 'click', 'focusin'].forEach(function (type) {
       ctx.el.addEventListener(type, function (e) { if (e.target.matches && e.target.matches('[data-body]')) updateWordBar(e.target); });
     });
-    document.addEventListener('selectionchange', function () {
+    ctx.on(document, 'selectionchange', function () {
       var ta = ctx.el.querySelector('[data-body]');
       if (ta && document.activeElement === ta) updateWordBar(ta);
     });
@@ -567,7 +581,7 @@
           o = order().concat(['NEW']);
           state.sheet = null;
           change(store.addSection(song.id, { tag: d.arg }, o).then(function (r) {
-            secs[r.section.id] = r.section; song.section_order = r.order;
+            secs[r.section.id] = r.section; applyOrder(r.order);
             state.lyEditing = r.section.id; afterRender.focusNext = true;
           }));
           return true;
@@ -581,14 +595,14 @@
           o = order(); i = o.indexOf(x.id);
           o.splice(o.length, 0, 'NEW');   // repeats go at the end; move them where you like
           state.sheet = null;
-          change(store.addSection(song.id, { tag: x.tag, repeat_of: x.id }, o).then(function (r) { secs[r.section.id] = r.section; song.section_order = r.order; }));
+          change(store.addSection(song.id, { tag: x.tag, repeat_of: x.id }, o).then(function (r) { secs[r.section.id] = r.section; applyOrder(r.order); }));
           return true;
         case 'ed-dup':
           if (!x) break;
           o = order(); i = o.indexOf(x.id);
           o.splice(i + 1, 0, 'NEW');
           state.sheet = null;
-          change(store.addSection(song.id, { tag: x.tag, body: x.body }, o).then(function (r) { secs[r.section.id] = r.section; song.section_order = r.order; }));
+          change(store.addSection(song.id, { tag: x.tag, body: x.body }, o).then(function (r) { secs[r.section.id] = r.section; applyOrder(r.order); }));
           return true;
         case 'ed-move': {
           if (!x) break;
@@ -596,7 +610,7 @@
           var j = i + (+d.arg);
           if (j < 0 || j >= o.length) break;
           o.splice(i, 1); o.splice(j, 0, x.id);
-          song.section_order = o;
+          applyOrder(o);
           change(store.setOrder(song.id, o));
           return true;
         }
@@ -609,16 +623,16 @@
           // Repeats of this section go too (they'd point at nothing).
           var reps = Object.keys(secs).filter(function (id) { return secs[id].repeat_of === gone.id; });
           o = o.filter(function (id) { return reps.indexOf(id) < 0; });
-          song.section_order = o;
+          applyOrder(o);
           delete secs[gone.id]; reps.forEach(function (id) { delete secs[id]; });
           state.sheet = null; if (state.lyEditing === gone.id) state.lyEditing = null;
           var all = [gone.id].concat(reps);
           change(Promise.all(all.map(function (id) { return store.setSectionDeleted(id, song.id, true, o); })));
           showUndo(`${gone.repeat_of ? 'Repeat' : lab[gone.id] || 'Section'} deleted`, function () {
-            song.section_order = before;
             secs[gone.id] = gone;
+            applyOrder(before);
             change(Promise.all(all.map(function (id) { return store.setSectionDeleted(id, song.id, false, before); })).then(function () { return store.load(song.id); })
-              .then(function (r) { r.sections.forEach(function (s) { secs[s.id] = s; }); song.section_order = r.song.section_order; }));
+              .then(function (r) { secs = {}; r.sections.forEach(function (s) { secs[s.id] = s; }); song.section_order = r.song.section_order; }));
           });
           return true;
         }
@@ -656,6 +670,12 @@
       sheet: sheet,
       act: act,
       afterRender: afterRender,
+      /** Before the Songwriter is taken off the page: save what's pending, stop live updates. */
+      destroy: function () {
+        flush();
+        if (stopLive) { stopLive(); stopLive = null; }
+        if (undo) clearTimeout(undo.timer);
+      },
       isBusy: function () {
         var ta = ctx.el.querySelector('[data-body]');
         return !!((ta && document.activeElement === ta) || saving || Object.keys(pending).length);
